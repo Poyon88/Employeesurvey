@@ -60,7 +60,7 @@ export default function DistributePage() {
   const [tokens, setTokens] = useState<TokenInfo[]>([]);
   const [responseCount, setResponseCount] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [qrDataUrl, setQrDataUrl] = useState<string>("");
+  const [qrSvg, setQrSvg] = useState<string>("");
   const [genericLink, setGenericLink] = useState("");
   const [emailStats, setEmailStats] = useState<{
     total: number;
@@ -141,8 +141,8 @@ export default function DistributePage() {
     setGenericLink(link);
 
     try {
-      const qr = await QRCode.toDataURL(link, { width: 300, margin: 2 });
-      setQrDataUrl(qr);
+      const svg = await QRCode.toString(link, { type: "svg", width: 300, margin: 2 });
+      setQrSvg(svg);
     } catch {
       // QR generation failed silently
     }
@@ -160,11 +160,14 @@ export default function DistributePage() {
   }
 
   function downloadQR() {
-    if (!qrDataUrl) return;
+    if (!qrSvg) return;
+    const blob = new Blob([qrSvg], { type: "image/svg+xml" });
+    const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
-    link.download = `survey-${surveyId}-qr.png`;
-    link.href = qrDataUrl;
+    link.download = `survey-${surveyId}-qr.svg`;
+    link.href = url;
     link.click();
+    URL.revokeObjectURL(url);
   }
 
   function downloadDistributionCSV() {
@@ -371,11 +374,10 @@ export default function DistributePage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col items-center gap-4">
-          {qrDataUrl && (
-            <img
-              src={qrDataUrl}
-              alt="QR Code du sondage"
+          {qrSvg && (
+            <div
               className="h-48 w-48 rounded border"
+              dangerouslySetInnerHTML={{ __html: qrSvg }}
             />
           )}
           <Button variant="outline" onClick={downloadQR}>
