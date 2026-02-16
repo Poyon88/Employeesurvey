@@ -1,0 +1,350 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+import { useParams } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  ArrowLeft,
+  Copy,
+  Download,
+  Link2,
+  QrCode,
+  Code,
+  Users,
+  BarChart3,
+} from "lucide-react";
+import { toast } from "sonner";
+import Link from "next/link";
+import QRCode from "qrcode";
+
+type TokenInfo = {
+  id: string;
+  token: string;
+  direction_name: string | null;
+  department_name: string | null;
+  service_name: string | null;
+};
+
+export default function DistributePage() {
+  const params = useParams();
+  const surveyId = params.id as string;
+  const supabase = createClient();
+
+  const [survey, setSurvey] = useState<{
+    title_fr: string;
+    status: string;
+  } | null>(null);
+  const [tokens, setTokens] = useState<TokenInfo[]>([]);
+  const [responseCount, setResponseCount] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [qrDataUrl, setQrDataUrl] = useState<string>("");
+  const [genericLink, setGenericLink] = useState("");
+
+  const loadData = useCallback(async () => {
+    setLoading(true);
+
+    // Load survey
+    const { data: surveyData } = await supabase
+      .from("surveys")
+      .select("title_fr, status")
+      .eq("id", surveyId)
+      .single();
+
+    if (surveyData) setSurvey(surveyData);
+
+    // Load tokens with org names
+    const { data: tokensData } = await supabase
+      .from("anonymous_tokens")
+      .select(
+        "id, token, direction_id, department_id, service_id"
+      );
+
+    if (tokensData && tokensData.length > 0) {
+      // Load organizations for name resolution
+      const { data: orgs } = await supabase
+        .from("organizations")
+        .select("id, name");
+
+      const orgMap = new Map(
+        (orgs || []).map((o) => [o.id, o.name])
+      );
+
+      setTokens(
+        tokensData.map((t) => ({
+          id: t.id,
+          token: t.token,
+          direction_name: t.direction_id ? orgMap.get(t.direction_id) || null : null,
+          department_name: t.department_id ? orgMap.get(t.department_id) || null : null,
+          service_name: t.service_id ? orgMap.get(t.service_id) || null : null,
+        }))
+      );
+    }
+
+    // Count responses
+    const { count } = await supabase
+      .from("responses")
+      .select("id", { count: "exact", head: true })
+      .eq("survey_id", surveyId);
+
+    setResponseCount(count || 0);
+
+    // Generate generic link and QR
+    const baseUrl = window.location.origin;
+    const link = `${baseUrl}/s/${surveyId}`;
+    setGenericLink(link);
+
+    try {
+      const qr = await QRCode.toDataURL(link, { width: 300, margin: 2 });
+      setQrDataUrl(qr);
+    } catch {
+      // QR generation failed silently
+    }
+
+    setLoading(false);
+  }, [supabase, surveyId]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  function copyToClipboard(text: string) {
+    navigator.clipboard.writeText(text);
+    toast.success("Copié dans le presse-papiers");
+  }
+
+  function downloadQR() {
+    if (!qrDataUrl) return;
+    const link = document.createElement("a");
+    link.download = `survey-${surveyId}-qr.png`;
+    link.href = qrDataUrl;
+    link.click();
+  }
+
+  function downloadDistributionCSV() {
+    if (tokens.length === 0) {
+      toast.error("Aucun token disponible. Importez d'abord la structure organisationnelle.");
+      return;
+    }
+
+    const baseUrl = window.location.origin;
+    const rows = [
+      ["token", "lien_sondage", "direction", "département", "service"],
+      ...tokens.map((t) => [
+        t.token,
+        `${baseUrl}/s/${surveyId}?t=${t.token}`,
+        t.direction_name || "",
+        t.department_name || "",
+        t.service_name || "",
+      ]),
+    ];
+
+    const csvContent = rows
+      .map((r) => r.map((v) => `"${v.replace(/"/g, '""')}"`).join(","))
+      .join("\n");
+
+    const blob = new Blob(["\uFEFF" + csvContent], {
+      type: "text/csv;charset=utf-8;",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `distribution-${surveyId}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+
+    toast.success("CSV de distribution téléchargé");
+  }
+
+  function getIframeCode() {
+    return `<iframe src="${genericLink}" width="100%" height="700" frameborder="0" style="border: 1px solid #e5e7eb; border-radius: 8px;"></iframe>`;
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <p className="text-muted-foreground">Chargement...</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mx-auto max-w-3xl space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <Link href={`/surveys/${surveyId}/edit`}>
+            <Button variant="ghost" size="icon">
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+          </Link>
+          <div>
+            <h1 className="text-2xl font-bold">Distribution</h1>
+            <p className="text-sm text-muted-foreground">
+              {survey?.title_fr}
+            </p>
+          </div>
+        </div>
+        <Link href={`/surveys/${surveyId}/results`}>
+          <Button variant="outline">
+            <BarChart3 className="mr-2 h-4 w-4" />
+            Résultats
+          </Button>
+        </Link>
+      </div>
+
+      {/* Stats */}
+      <div className="grid gap-4 sm:grid-cols-3">
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-2">
+              <Users className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm text-muted-foreground">Tokens</span>
+            </div>
+            <p className="mt-1 text-2xl font-bold">{tokens.length}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-2">
+              <BarChart3 className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm text-muted-foreground">Réponses</span>
+            </div>
+            <p className="mt-1 text-2xl font-bold">{responseCount}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-2">
+              <BarChart3 className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm text-muted-foreground">Taux</span>
+            </div>
+            <p className="mt-1 text-2xl font-bold">
+              {tokens.length > 0
+                ? `${Math.round((responseCount / tokens.length) * 100)}%`
+                : "—"}
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Link */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Link2 className="h-5 w-5" />
+            Lien de partage
+          </CardTitle>
+          <CardDescription>
+            Lien générique (sans token). Les répondants devront saisir leur
+            token manuellement, ou utilisez le CSV pour des liens
+            personnalisés.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex gap-2">
+            <Input value={genericLink} readOnly className="font-mono text-sm" />
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => copyToClipboard(genericLink)}
+            >
+              <Copy className="h-4 w-4" />
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* QR Code */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <QrCode className="h-5 w-5" />
+            QR Code
+          </CardTitle>
+          <CardDescription>
+            Imprimez ou affichez ce QR code pour un accès rapide au sondage
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col items-center gap-4">
+          {qrDataUrl && (
+            <img
+              src={qrDataUrl}
+              alt="QR Code du sondage"
+              className="h-48 w-48 rounded border"
+            />
+          )}
+          <Button variant="outline" onClick={downloadQR}>
+            <Download className="mr-2 h-4 w-4" />
+            Télécharger QR Code
+          </Button>
+        </CardContent>
+      </Card>
+
+      {/* Iframe embed */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Code className="h-5 w-5" />
+            Intégration iframe
+          </CardTitle>
+          <CardDescription>
+            Intégrez le sondage directement dans un site ou intranet
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <pre className="overflow-x-auto rounded bg-muted p-3 text-xs">
+            {getIframeCode()}
+          </pre>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => copyToClipboard(getIframeCode())}
+          >
+            <Copy className="mr-2 h-4 w-4" />
+            Copier le code
+          </Button>
+        </CardContent>
+      </Card>
+
+      {/* CSV Distribution */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Download className="h-5 w-5" />
+            Distribution par email (CSV)
+          </CardTitle>
+          <CardDescription>
+            Téléchargez un CSV contenant un lien personnalisé par token.
+            Utilisez ce fichier avec votre outil d&apos;emailing pour envoyer
+            un lien unique à chaque employé.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Button onClick={downloadDistributionCSV}>
+            <Download className="mr-2 h-4 w-4" />
+            Télécharger CSV ({tokens.length} liens)
+          </Button>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
