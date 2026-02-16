@@ -48,3 +48,25 @@ export const QUESTION_TYPE_LABELS: Record<QuestionType, string> = {
   likert: "Échelle de Likert (1-10)",
   free_text: "Texte libre",
 };
+
+export type AnonymousToken = {
+  id: string;
+  token: string;
+  email: string | null;
+  employee_name: string | null;
+  direction_id: string | null;
+  department_id: string | null;
+  service_id: string | null;
+  invitation_sent_at: string | null;
+  reminder_sent_at: string | null;
+  created_at: string;
+};
+
+export type EmailSendResult = {
+  success: boolean;
+  sent: number;
+  failed: number;
+  total: number;
+  message?: string;
+  errors: Array<{ email: string; error: string }>;
+};

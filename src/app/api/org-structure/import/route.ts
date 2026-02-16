@@ -270,6 +270,8 @@ export async function POST(request: Request) {
 
     const { error } = await admin.from("anonymous_tokens").insert({
       token,
+      email: emp.email,
+      employee_name: emp.nom,
       direction_id: dirId,
       department_id: deptId,
       service_id: svcId,

@@ -31,6 +31,10 @@ import {
   Code,
   Users,
   BarChart3,
+  Mail,
+  Send,
+  Bell,
+  Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
@@ -58,6 +62,13 @@ export default function DistributePage() {
   const [loading, setLoading] = useState(true);
   const [qrDataUrl, setQrDataUrl] = useState<string>("");
   const [genericLink, setGenericLink] = useState("");
+  const [emailStats, setEmailStats] = useState<{
+    total: number;
+    invited: number;
+    responded: number;
+  }>({ total: 0, invited: 0, responded: 0 });
+  const [sendingInvitations, setSendingInvitations] = useState(false);
+  const [sendingReminders, setSendingReminders] = useState(false);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -106,6 +117,23 @@ export default function DistributePage() {
       .eq("survey_id", surveyId);
 
     setResponseCount(count || 0);
+
+    // Load email stats
+    const { data: tokensWithEmail } = await supabase
+      .from("anonymous_tokens")
+      .select("id, email, invitation_sent_at")
+      .not("email", "is", null);
+
+    const withEmail = tokensWithEmail || [];
+    const invitedCount = withEmail.filter(
+      (t) => t.invitation_sent_at !== null
+    ).length;
+
+    setEmailStats({
+      total: withEmail.length,
+      invited: invitedCount,
+      responded: count || 0,
+    });
 
     // Generate generic link and QR
     const baseUrl = window.location.origin;
@@ -172,6 +200,64 @@ export default function DistributePage() {
     URL.revokeObjectURL(url);
 
     toast.success("CSV de distribution téléchargé");
+  }
+
+  async function sendInvitations() {
+    setSendingInvitations(true);
+    try {
+      const response = await fetch(`/api/surveys/${surveyId}/send-invitations`, {
+        method: "POST",
+      });
+      const data = await response.json();
+
+      if (response.ok) {
+        if (data.sent > 0) {
+          toast.success(`${data.sent} invitation(s) envoyée(s) avec succès`);
+        }
+        if (data.failed > 0) {
+          toast.error(`${data.failed} invitation(s) échouée(s)`, { duration: 5000 });
+        }
+        if (data.sent === 0 && data.failed === 0) {
+          toast.info(data.message || "Aucune invitation à envoyer");
+        }
+        await loadData();
+      } else {
+        toast.error(data.error || "Erreur lors de l'envoi");
+      }
+    } catch {
+      toast.error("Erreur réseau lors de l'envoi");
+    } finally {
+      setSendingInvitations(false);
+    }
+  }
+
+  async function sendReminders() {
+    setSendingReminders(true);
+    try {
+      const response = await fetch(`/api/surveys/${surveyId}/send-reminders`, {
+        method: "POST",
+      });
+      const data = await response.json();
+
+      if (response.ok) {
+        if (data.sent > 0) {
+          toast.success(`${data.sent} rappel(s) envoyé(s) avec succès`);
+        }
+        if (data.failed > 0) {
+          toast.error(`${data.failed} rappel(s) échoué(s)`, { duration: 5000 });
+        }
+        if (data.sent === 0 && data.failed === 0) {
+          toast.info(data.message || "Aucun rappel à envoyer");
+        }
+        await loadData();
+      } else {
+        toast.error(data.error || "Erreur lors de l'envoi");
+      }
+    } catch {
+      toast.error("Erreur réseau lors de l'envoi");
+    } finally {
+      setSendingReminders(false);
+    }
   }
 
   function getIframeCode() {
@@ -322,6 +408,101 @@ export default function DistributePage() {
             <Copy className="mr-2 h-4 w-4" />
             Copier le code
           </Button>
+        </CardContent>
+      </Card>
+
+      {/* Email Distribution */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Mail className="h-5 w-5" />
+            Distribution par email
+          </CardTitle>
+          <CardDescription>
+            Envoyez des invitations et des rappels directement depuis
+            PulseSurvey. Chaque email contient un lien unique et anonyme.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Stats */}
+          <div className="grid grid-cols-3 gap-4 rounded-lg bg-muted/50 p-4">
+            <div>
+              <p className="text-xs text-muted-foreground">Emails disponibles</p>
+              <p className="text-2xl font-bold">{emailStats.total}</p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Invitations envoyées</p>
+              <p className="text-2xl font-bold">{emailStats.invited}</p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground">Non-répondants</p>
+              <p className="text-2xl font-bold">
+                {Math.max(0, emailStats.invited - emailStats.responded)}
+              </p>
+            </div>
+          </div>
+
+          {/* Actions */}
+          <div className="flex gap-3">
+            <Button
+              onClick={sendInvitations}
+              disabled={
+                sendingInvitations ||
+                emailStats.total === 0 ||
+                survey?.status !== "published"
+              }
+              className="flex-1"
+            >
+              {sendingInvitations ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Envoi en cours...
+                </>
+              ) : (
+                <>
+                  <Send className="mr-2 h-4 w-4" />
+                  Envoyer les invitations
+                </>
+              )}
+            </Button>
+
+            <Button
+              onClick={sendReminders}
+              disabled={
+                sendingReminders ||
+                emailStats.invited === 0 ||
+                emailStats.invited <= emailStats.responded ||
+                survey?.status !== "published"
+              }
+              variant="outline"
+              className="flex-1"
+            >
+              {sendingReminders ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Envoi en cours...
+                </>
+              ) : (
+                <>
+                  <Bell className="mr-2 h-4 w-4" />
+                  Envoyer des rappels
+                </>
+              )}
+            </Button>
+          </div>
+
+          {/* Status messages */}
+          {survey?.status !== "published" && (
+            <p className="text-sm text-amber-600">
+              Le sondage doit être publié pour envoyer des emails.
+            </p>
+          )}
+          {emailStats.total === 0 && (
+            <p className="text-sm text-muted-foreground">
+              Aucun email disponible. Importez d&apos;abord la structure
+              organisationnelle avec les emails des employés.
+            </p>
+          )}
         </CardContent>
       </Card>
 
