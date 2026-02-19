@@ -33,13 +33,14 @@ import { toast } from "sonner";
 type OrgUnit = {
   id: string;
   name: string;
-  type: "direction" | "department" | "service";
+  type: "societe" | "direction" | "department" | "service";
   parent_id: string | null;
   created_at: string;
 };
 
 type ImportSummary = {
   employees: number;
+  societes: number;
   directions: number;
   departments: number;
   services: number;
@@ -50,12 +51,14 @@ type TokenMapping = {
   email: string;
   nom: string;
   token: string;
+  societe: string;
   direction: string;
   departement: string;
   service: string;
 };
 
 const TYPE_LABELS: Record<string, string> = {
+  societe: "Société",
   direction: "Direction",
   department: "Département",
   service: "Service",
@@ -65,6 +68,7 @@ const TYPE_COLORS: Record<
   string,
   "default" | "secondary" | "destructive" | "outline"
 > = {
+  societe: "outline",
   direction: "destructive",
   department: "default",
   service: "secondary",
@@ -157,10 +161,10 @@ export default function OrgStructurePage() {
   function downloadDistributionCSV() {
     if (tokenMappings.length === 0) return;
 
-    const header = "Email,Nom,Token,Direction,Departement,Service";
+    const header = "Email,Nom,Token,Société,Direction,Departement,Service";
     const rows = tokenMappings.map(
       (t) =>
-        `${t.email},${t.nom},${t.token},${t.direction},${t.departement},${t.service}`
+        `${t.email},${t.nom},${t.token},${t.societe},${t.direction},${t.departement},${t.service}`
     );
     const csv = [header, ...rows].join("\n");
 
@@ -174,7 +178,9 @@ export default function OrgStructurePage() {
   }
 
   // Build hierarchy for display
+  const societesList = orgs.filter((o) => o.type === "societe");
   const directions = orgs.filter((o) => o.type === "direction");
+  const rootNodes = societesList.length > 0 ? societesList : directions;
   const getChildren = (parentId: string) =>
     orgs.filter((o) => o.parent_id === parentId);
 
@@ -199,8 +205,9 @@ export default function OrgStructurePage() {
           </CardTitle>
           <CardDescription>
             Fichier CSV ou Excel avec les colonnes : <strong>Nom</strong>,{" "}
-            <strong>Email</strong>, <strong>Direction</strong>,{" "}
-            <strong>Département</strong>, <strong>Service</strong>
+            <strong>Email</strong>, <strong>Société</strong>,{" "}
+            <strong>Direction</strong>, <strong>Département</strong>,{" "}
+            <strong>Service</strong>
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -250,12 +257,18 @@ export default function OrgStructurePage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
               <div className="text-center">
                 <p className="text-2xl font-bold text-green-700">
                   {summary.employees}
                 </p>
                 <p className="text-sm text-green-600">Employés</p>
+              </div>
+              <div className="text-center">
+                <p className="text-2xl font-bold text-green-700">
+                  {summary.societes}
+                </p>
+                <p className="text-sm text-green-600">Sociétés</p>
               </div>
               <div className="text-center">
                 <p className="text-2xl font-bold text-green-700">
@@ -308,7 +321,7 @@ export default function OrgStructurePage() {
             <p className="text-muted-foreground py-4 text-center">
               Chargement...
             </p>
-          ) : directions.length === 0 ? (
+          ) : rootNodes.length === 0 ? (
             <div className="text-center py-8">
               <Users className="mx-auto h-12 w-12 text-muted-foreground/50" />
               <p className="mt-2 text-muted-foreground">
@@ -326,55 +339,75 @@ export default function OrgStructurePage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {directions.map((dir) => {
-                    const depts = getChildren(dir.id);
+                  {rootNodes.map((root) => {
+                    const level1Children = getChildren(root.id);
                     return (
-                      <Fragment key={dir.id}>
+                      <Fragment key={root.id}>
                         <TableRow>
-                          <TableCell className="font-semibold">
-                            {dir.name}
+                          <TableCell className="font-bold">
+                            {root.name}
                           </TableCell>
                           <TableCell>
-                            <Badge variant={TYPE_COLORS[dir.type]}>
-                              {TYPE_LABELS[dir.type]}
+                            <Badge variant={TYPE_COLORS[root.type]}>
+                              {TYPE_LABELS[root.type]}
                             </Badge>
                           </TableCell>
                           <TableCell className="text-muted-foreground">
                             —
                           </TableCell>
                         </TableRow>
-                        {depts.map((dept) => {
-                          const svcs = getChildren(dept.id);
+                        {level1Children.map((l1) => {
+                          const level2Children = getChildren(l1.id);
                           return (
-                            <Fragment key={dept.id}>
+                            <Fragment key={l1.id}>
                               <TableRow>
-                                <TableCell className="pl-8">
-                                  {dept.name}
+                                <TableCell className="pl-8 font-semibold">
+                                  {l1.name}
                                 </TableCell>
                                 <TableCell>
-                                  <Badge variant={TYPE_COLORS[dept.type]}>
-                                    {TYPE_LABELS[dept.type]}
+                                  <Badge variant={TYPE_COLORS[l1.type]}>
+                                    {TYPE_LABELS[l1.type]}
                                   </Badge>
                                 </TableCell>
                                 <TableCell className="text-muted-foreground">
-                                  {dir.name}
+                                  {root.name}
                                 </TableCell>
                               </TableRow>
-                              {svcs.map((svc) => (
-                                <TableRow key={svc.id}>
-                                  <TableCell className="pl-16">
-                                    {svc.name}
-                                  </TableCell>
-                                  <TableCell>
-                                    <Badge variant={TYPE_COLORS[svc.type]}>
-                                      {TYPE_LABELS[svc.type]}
-                                    </Badge>
-                                  </TableCell>
-                                  <TableCell className="text-muted-foreground">
-                                    {dept.name}
-                                  </TableCell>
-                                </TableRow>
-                              ))}
+                              {level2Children.map((l2) => {
+                                const level3Children = getChildren(l2.id);
+                                return (
+                                  <Fragment key={l2.id}>
+                                    <TableRow>
+                                      <TableCell className="pl-16">
+                                        {l2.name}
+                                      </TableCell>
+                                      <TableCell>
+                                        <Badge variant={TYPE_COLORS[l2.type]}>
+                                          {TYPE_LABELS[l2.type]}
+                                        </Badge>
+                                      </TableCell>
+                                      <TableCell className="text-muted-foreground">
+                                        {l1.name}
+                                      </TableCell>
+                                    </TableRow>
+                                    {level3Children.map((l3) => (
+                                      <TableRow key={l3.id}>
+                                        <TableCell className="pl-24">
+                                          {l3.name}
+                                        </TableCell>
+                                        <TableCell>
+                                          <Badge variant={TYPE_COLORS[l3.type]}>
+                                            {TYPE_LABELS[l3.type]}
+                                          </Badge>
+                                        </TableCell>
+                                        <TableCell className="text-muted-foreground">
+                                          {l2.name}
+                                        </TableCell>
+                                      </TableRow>
+                                    ))}
+                                  </Fragment>
+                                );
+                              })}
                             </Fragment>
                           );
                         })}

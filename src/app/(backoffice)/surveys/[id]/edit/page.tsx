@@ -44,6 +44,10 @@ import {
   ArrowLeft,
   FileUp,
   TrendingUp,
+  ChevronUp,
+  ChevronDown,
+  Trash2,
+  FolderOpen,
 } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
@@ -52,6 +56,12 @@ import {
   QuestionCard,
   type EditableQuestion,
 } from "@/components/survey-editor/question-card";
+
+type EditableSection = {
+  id: string;
+  title_fr: string;
+  questions: EditableQuestion[];
+};
 
 export default function SurveyEditPage() {
   const params = useParams();
@@ -64,10 +74,15 @@ export default function SurveyEditPage() {
   const [titleEn, setTitleEn] = useState("");
   const [descFr, setDescFr] = useState("");
   const [descEn, setDescEn] = useState("");
+  const [introFr, setIntroFr] = useState("");
+  const [introEn, setIntroEn] = useState("");
   const [waveGroupId, setWaveGroupId] = useState<string>("");
   const [waveNumber, setWaveNumber] = useState<number>(1);
   const [waveGroups, setWaveGroups] = useState<{ id: string; name: string }[]>([]);
-  const [questions, setQuestions] = useState<EditableQuestion[]>([]);
+  const [sections, setSections] = useState<EditableSection[]>([]);
+  const [newWaveGroupName, setNewWaveGroupName] = useState("");
+  const [creatingWaveGroup, setCreatingWaveGroup] = useState(false);
+  const [showNewWaveGroup, setShowNewWaveGroup] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
@@ -78,6 +93,8 @@ export default function SurveyEditPage() {
       coordinateGetter: sortableKeyboardCoordinates,
     })
   );
+
+  const totalQuestions = sections.reduce((sum, s) => sum + s.questions.length, 0);
 
   const loadSurvey = useCallback(async () => {
     setLoading(true);
@@ -99,6 +116,8 @@ export default function SurveyEditPage() {
     setTitleEn(surveyData.title_en || "");
     setDescFr(surveyData.description_fr || "");
     setDescEn(surveyData.description_en || "");
+    setIntroFr(surveyData.introduction_fr || "");
+    setIntroEn(surveyData.introduction_en || "");
     setWaveGroupId(surveyData.wave_group_id || "");
     setWaveNumber(surveyData.wave_number || 1);
 
@@ -109,31 +128,82 @@ export default function SurveyEditPage() {
       .order("name");
     setWaveGroups(wgData || []);
 
+    // Load sections
+    const { data: sectionsData } = await supabase
+      .from("survey_sections")
+      .select("id, title_fr, sort_order")
+      .eq("survey_id", surveyId)
+      .order("sort_order");
+
+    // Load questions
     const { data: questionsData } = await supabase
       .from("questions")
       .select("*, question_options(*)")
       .eq("survey_id", surveyId)
       .order("sort_order");
 
-    if (questionsData) {
-      setQuestions(
-        questionsData.map((q: Question & { question_options: QuestionOption[] }) => ({
-          id: q.id,
-          type: q.type,
-          text_fr: q.text_fr,
-          text_en: q.text_en || "",
-          required: q.required,
-          options: (q.question_options || [])
-            .sort((a, b) => a.sort_order - b.sort_order)
-            .map((o) => ({
-              id: o.id,
-              text_fr: o.text_fr,
-              text_en: o.text_en || "",
-            })),
-        }))
-      );
+    const allQuestions = (questionsData || []).map(
+      (q: Question & { question_options: QuestionOption[] }) => ({
+        id: q.id,
+        type: q.type,
+        text_fr: q.text_fr,
+        text_en: q.text_en || "",
+        question_code: q.question_code || "",
+        required: q.required,
+        sectionId: q.section_id || null,
+        options: (q.question_options || [])
+          .sort((a, b) => a.sort_order - b.sort_order)
+          .map((o) => ({
+            id: o.id,
+            text_fr: o.text_fr,
+            text_en: o.text_en || "",
+          })),
+      })
+    );
+
+    // Build sections with their questions
+    const loadedSections: EditableSection[] = [];
+
+    // Unsectioned questions go into a default section
+    const unsectioned = allQuestions.filter((q: { sectionId: string | null }) => !q.sectionId);
+    if (unsectioned.length > 0 && (!sectionsData || sectionsData.length === 0)) {
+      // Backward compat: no sections exist, put all in a default section
+      loadedSections.push({
+        id: crypto.randomUUID(),
+        title_fr: "Général",
+        questions: unsectioned,
+      });
+    } else {
+      // Add defined sections with their questions
+      for (const sec of sectionsData || []) {
+        loadedSections.push({
+          id: sec.id,
+          title_fr: sec.title_fr,
+          questions: allQuestions.filter(
+            (q: { sectionId: string | null }) => q.sectionId === sec.id
+          ),
+        });
+      }
+      // If there are unsectioned questions alongside existing sections, add them to a default section
+      if (unsectioned.length > 0) {
+        loadedSections.unshift({
+          id: crypto.randomUUID(),
+          title_fr: "Sans section",
+          questions: unsectioned,
+        });
+      }
     }
 
+    // If no sections and no questions, start with one empty section
+    if (loadedSections.length === 0) {
+      loadedSections.push({
+        id: crypto.randomUUID(),
+        title_fr: "Section 1",
+        questions: [],
+      });
+    }
+
+    setSections(loadedSections);
     setLoading(false);
   }, [supabase, surveyId, router]);
 
@@ -141,40 +211,136 @@ export default function SurveyEditPage() {
     loadSurvey();
   }, [loadSurvey]);
 
-  function addQuestion() {
-    setQuestions([
-      ...questions,
+  // Section management
+  function addSection() {
+    setSections([
+      ...sections,
       {
         id: crypto.randomUUID(),
-        type: "single_choice",
-        text_fr: "",
-        text_en: "",
-        required: true,
-        options: [
-          { id: crypto.randomUUID(), text_fr: "", text_en: "" },
-          { id: crypto.randomUUID(), text_fr: "", text_en: "" },
-        ],
+        title_fr: `Section ${sections.length + 1}`,
+        questions: [],
       },
     ]);
   }
 
-  function updateQuestion(index: number, updated: EditableQuestion) {
-    const newQuestions = [...questions];
-    newQuestions[index] = updated;
-    setQuestions(newQuestions);
+  function updateSectionTitle(sectionIndex: number, title: string) {
+    const updated = [...sections];
+    updated[sectionIndex] = { ...updated[sectionIndex], title_fr: title };
+    setSections(updated);
   }
 
-  function deleteQuestion(index: number) {
-    setQuestions(questions.filter((_, i) => i !== index));
+  function deleteSection(sectionIndex: number) {
+    if (sections[sectionIndex].questions.length > 0) {
+      if (!confirm("Cette section contient des questions. Les questions seront déplacées dans la section précédente ou suivante.")) return;
+      const targetIndex = sectionIndex > 0 ? sectionIndex - 1 : sectionIndex + 1;
+      if (targetIndex >= 0 && targetIndex < sections.length && targetIndex !== sectionIndex) {
+        const updated = [...sections];
+        updated[targetIndex] = {
+          ...updated[targetIndex],
+          questions: [...updated[targetIndex].questions, ...sections[sectionIndex].questions],
+        };
+        updated.splice(sectionIndex, 1);
+        setSections(updated);
+        return;
+      }
+    }
+    setSections(sections.filter((_, i) => i !== sectionIndex));
   }
 
-  function handleDragEnd(event: DragEndEvent) {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
+  function moveSectionUp(index: number) {
+    if (index === 0) return;
+    const updated = [...sections];
+    [updated[index - 1], updated[index]] = [updated[index], updated[index - 1]];
+    setSections(updated);
+  }
 
-    const oldIndex = questions.findIndex((q) => q.id === active.id);
-    const newIndex = questions.findIndex((q) => q.id === over.id);
-    setQuestions(arrayMove(questions, oldIndex, newIndex));
+  function moveSectionDown(index: number) {
+    if (index >= sections.length - 1) return;
+    const updated = [...sections];
+    [updated[index], updated[index + 1]] = [updated[index + 1], updated[index]];
+    setSections(updated);
+  }
+
+  // Question management within sections
+  function addQuestion(sectionIndex: number) {
+    const updated = [...sections];
+    updated[sectionIndex] = {
+      ...updated[sectionIndex],
+      questions: [
+        ...updated[sectionIndex].questions,
+        {
+          id: crypto.randomUUID(),
+          type: "single_choice",
+          text_fr: "",
+          text_en: "",
+          question_code: "",
+          required: true,
+          options: [
+            { id: crypto.randomUUID(), text_fr: "", text_en: "" },
+            { id: crypto.randomUUID(), text_fr: "", text_en: "" },
+          ],
+        },
+      ],
+    };
+    setSections(updated);
+  }
+
+  function updateQuestion(sectionIndex: number, questionIndex: number, updated: EditableQuestion) {
+    const newSections = [...sections];
+    const newQuestions = [...newSections[sectionIndex].questions];
+    newQuestions[questionIndex] = updated;
+    newSections[sectionIndex] = { ...newSections[sectionIndex], questions: newQuestions };
+    setSections(newSections);
+  }
+
+  function deleteQuestion(sectionIndex: number, questionIndex: number) {
+    const newSections = [...sections];
+    newSections[sectionIndex] = {
+      ...newSections[sectionIndex],
+      questions: newSections[sectionIndex].questions.filter((_, i) => i !== questionIndex),
+    };
+    setSections(newSections);
+  }
+
+  function handleDragEnd(sectionIndex: number) {
+    return (event: DragEndEvent) => {
+      const { active, over } = event;
+      if (!over || active.id === over.id) return;
+
+      const sec = sections[sectionIndex];
+      const oldIndex = sec.questions.findIndex((q) => q.id === active.id);
+      const newIndex = sec.questions.findIndex((q) => q.id === over.id);
+
+      const newSections = [...sections];
+      newSections[sectionIndex] = {
+        ...newSections[sectionIndex],
+        questions: arrayMove(sec.questions, oldIndex, newIndex),
+      };
+      setSections(newSections);
+    };
+  }
+
+  // Wave group management
+  async function handleCreateWaveGroup() {
+    if (!newWaveGroupName.trim()) return;
+    setCreatingWaveGroup(true);
+
+    const { data, error } = await supabase
+      .from("wave_groups")
+      .insert({ name: newWaveGroupName.trim() })
+      .select("id, name")
+      .single();
+
+    if (error) {
+      toast.error("Erreur lors de la création", { description: error.message });
+    } else if (data) {
+      setWaveGroups([...waveGroups, data].sort((a, b) => a.name.localeCompare(b.name)));
+      setWaveGroupId(data.id);
+      setNewWaveGroupName("");
+      setShowNewWaveGroup(false);
+      toast.success(`Groupe "${data.name}" créé`);
+    }
+    setCreatingWaveGroup(false);
   }
 
   async function handleSave() {
@@ -188,6 +354,8 @@ export default function SurveyEditPage() {
         title_en: titleEn || null,
         description_fr: descFr || null,
         description_en: descEn || null,
+        introduction_fr: introFr || null,
+        introduction_en: introEn || null,
         wave_group_id: waveGroupId || null,
         wave_number: waveNumber,
       })
@@ -201,76 +369,110 @@ export default function SurveyEditPage() {
       return;
     }
 
-    // Delete all existing questions (cascade deletes options)
+    // Delete existing questions and sections
     await supabase.from("questions").delete().eq("survey_id", surveyId);
+    await supabase.from("survey_sections").delete().eq("survey_id", surveyId);
 
-    // Insert questions and options
-    for (let i = 0; i < questions.length; i++) {
-      const q = questions[i];
-      if (!q.text_fr.trim()) continue;
+    // Insert sections and questions
+    let globalQuestionOrder = 0;
 
-      const { data: insertedQ, error: qError } = await supabase
-        .from("questions")
+    for (let si = 0; si < sections.length; si++) {
+      const sec = sections[si];
+
+      // Insert section
+      const { data: insertedSec, error: secError } = await supabase
+        .from("survey_sections")
         .insert({
           survey_id: surveyId,
-          type: q.type,
-          text_fr: q.text_fr,
-          text_en: q.text_en || null,
-          sort_order: i,
-          required: q.required,
+          title_fr: sec.title_fr,
+          sort_order: si,
         })
         .select("id")
         .single();
 
-      if (qError || !insertedQ) {
-        toast.error(`Erreur question ${i + 1}`, { description: qError?.message });
+      if (secError || !insertedSec) {
+        toast.error(`Erreur section "${sec.title_fr}"`, { description: secError?.message });
         setSaving(false);
         return;
       }
 
-      // Insert options if applicable
-      if (
-        (q.type === "single_choice" || q.type === "multiple_choice") &&
-        q.options.length > 0
-      ) {
-        const optionsToInsert = q.options
-          .filter((o) => o.text_fr.trim())
-          .map((o, j) => ({
-            question_id: insertedQ.id,
-            text_fr: o.text_fr,
-            text_en: o.text_en || null,
-            sort_order: j,
-          }));
+      // Insert questions in this section
+      for (let qi = 0; qi < sec.questions.length; qi++) {
+        const q = sec.questions[qi];
+        if (!q.text_fr.trim()) continue;
 
-        if (optionsToInsert.length > 0) {
-          const { error: oError } = await supabase
-            .from("question_options")
-            .insert(optionsToInsert);
+        const { data: insertedQ, error: qError } = await supabase
+          .from("questions")
+          .insert({
+            survey_id: surveyId,
+            section_id: insertedSec.id,
+            type: q.type,
+            text_fr: q.text_fr,
+            text_en: q.text_en || null,
+            question_code: q.question_code || null,
+            sort_order: globalQuestionOrder++,
+            required: q.required,
+          })
+          .select("id")
+          .single();
 
-          if (oError) {
-            toast.error(`Erreur options question ${i + 1}`, {
-              description: oError.message,
-            });
-            setSaving(false);
-            return;
+        if (qError || !insertedQ) {
+          toast.error(`Erreur question ${qi + 1}`, { description: qError?.message });
+          setSaving(false);
+          return;
+        }
+
+        // Insert options if applicable
+        if (
+          (q.type === "single_choice" || q.type === "multiple_choice") &&
+          q.options.length > 0
+        ) {
+          const optionsToInsert = q.options
+            .filter((o) => o.text_fr.trim())
+            .map((o, j) => ({
+              question_id: insertedQ.id,
+              text_fr: o.text_fr,
+              text_en: o.text_en || null,
+              sort_order: j,
+            }));
+
+          if (optionsToInsert.length > 0) {
+            const { error: oError } = await supabase
+              .from("question_options")
+              .insert(optionsToInsert);
+
+            if (oError) {
+              toast.error(`Erreur options question ${qi + 1}`, {
+                description: oError.message,
+              });
+              setSaving(false);
+              return;
+            }
           }
         }
       }
     }
 
+    // Clear translation cache since content changed
+    await supabase
+      .from("survey_translations_cache")
+      .delete()
+      .eq("survey_id", surveyId);
+
     toast.success("Sondage sauvegardé");
-    // Reload to get fresh IDs
     loadSurvey();
     setSaving(false);
   }
 
   async function handlePublish() {
-    if (questions.length === 0) {
+    if (totalQuestions === 0) {
       toast.error("Ajoutez au moins une question avant de publier");
       return;
     }
 
-    const emptyQuestions = questions.filter((q) => !q.text_fr.trim());
+    const emptyQuestions = sections.flatMap((s) =>
+      s.questions.filter((q) => !q.text_fr.trim())
+    );
     if (emptyQuestions.length > 0) {
       toast.error("Certaines questions n'ont pas de texte");
       return;
@@ -279,11 +481,8 @@ export default function SurveyEditPage() {
     if (!confirm("Publier ce sondage ? Il ne pourra plus être modifié.")) return;
 
     setPublishing(true);
-
-    // Save first
     await handleSave();
 
-    // Then publish
     const { error } = await supabase
       .from("surveys")
       .update({
@@ -417,24 +616,83 @@ export default function SurveyEditPage() {
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
-              <Label>Groupe de vagues (suivi longitudinal)</Label>
-              <Select
-                value={waveGroupId || "none"}
-                onValueChange={(v) => setWaveGroupId(v === "none" ? "" : v)}
+              <Label>Introduction (FR)</Label>
+              <Textarea
+                value={introFr}
+                onChange={(e) => setIntroFr(e.target.value)}
+                rows={4}
+                placeholder="Texte d'introduction affiché aux répondants avant le questionnaire..."
                 disabled={!isDraft}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Aucun" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Aucun</SelectItem>
-                  {waveGroups.map((wg) => (
-                    <SelectItem key={wg.id} value={wg.id}>
-                      {wg.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Introduction (EN)</Label>
+              <Textarea
+                value={introEn}
+                onChange={(e) => setIntroEn(e.target.value)}
+                rows={4}
+                placeholder="Introduction text shown to respondents before the survey..."
+                disabled={!isDraft}
+              />
+            </div>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label>Groupe de vagues (suivi longitudinal)</Label>
+              {showNewWaveGroup ? (
+                <div className="flex gap-2">
+                  <Input
+                    value={newWaveGroupName}
+                    onChange={(e) => setNewWaveGroupName(e.target.value)}
+                    placeholder="Nom du groupe..."
+                    onKeyDown={(e) => e.key === "Enter" && handleCreateWaveGroup()}
+                  />
+                  <Button
+                    size="sm"
+                    onClick={handleCreateWaveGroup}
+                    disabled={creatingWaveGroup || !newWaveGroupName.trim()}
+                  >
+                    {creatingWaveGroup ? "..." : "Créer"}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => { setShowNewWaveGroup(false); setNewWaveGroupName(""); }}
+                  >
+                    Annuler
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  <Select
+                    value={waveGroupId || "none"}
+                    onValueChange={(v) => setWaveGroupId(v === "none" ? "" : v)}
+                    disabled={!isDraft}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Aucun" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Aucun</SelectItem>
+                      {waveGroups.map((wg) => (
+                        <SelectItem key={wg.id} value={wg.id}>
+                          {wg.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {isDraft && (
+                    <Button
+                      size="icon"
+                      variant="outline"
+                      onClick={() => setShowNewWaveGroup(true)}
+                      title="Créer un nouveau groupe"
+                    >
+                      <Plus className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
+              )}
             </div>
             {waveGroupId && (
               <div className="space-y-2">
@@ -452,58 +710,145 @@ export default function SurveyEditPage() {
         </CardContent>
       </Card>
 
-      {/* Questions */}
+      {/* Sections & Questions */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-xl font-semibold">
-            Questions ({questions.length})
+            Sections & Questions ({totalQuestions} question{totalQuestions !== 1 ? "s" : ""})
           </h2>
           {isDraft && (
-            <Button variant="outline" onClick={addQuestion}>
-              <Plus className="mr-2 h-4 w-4" />
-              Ajouter une question
+            <Button variant="outline" onClick={addSection}>
+              <FolderOpen className="mr-2 h-4 w-4" />
+              Ajouter une section
             </Button>
           )}
         </div>
 
-        {questions.length === 0 ? (
+        {sections.length === 0 ? (
           <Card>
             <CardContent className="py-8 text-center text-muted-foreground">
-              Aucune question. Ajoutez des questions manuellement ou via
-              l&apos;import IA.
+              Aucune section. Ajoutez une section pour commencer.
             </CardContent>
           </Card>
         ) : (
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragEnd={handleDragEnd}
-          >
-            <SortableContext
-              items={questions.map((q) => q.id)}
-              strategy={verticalListSortingStrategy}
-            >
-              <div className="space-y-4">
-                {questions.map((q, i) => (
-                  <QuestionCard
-                    key={q.id}
-                    question={q}
-                    index={i}
-                    onChange={(updated) => updateQuestion(i, updated)}
-                    onDelete={() => deleteQuestion(i)}
-                    disabled={!isDraft}
-                  />
-                ))}
-              </div>
-            </SortableContext>
-          </DndContext>
+          sections.map((section, si) => {
+            // Running question number across all sections
+            let questionOffset = 0;
+            for (let i = 0; i < si; i++) {
+              questionOffset += sections[i].questions.length;
+            }
+
+            return (
+              <Card key={section.id} className="border-2">
+                <CardHeader className="pb-3">
+                  <div className="flex items-center gap-2">
+                    <FolderOpen className="h-4 w-4 text-muted-foreground" />
+                    <Badge variant="outline" className="text-xs">
+                      Section {si + 1}
+                    </Badge>
+                    <div className="flex-1">
+                      {isDraft ? (
+                        <Input
+                          value={section.title_fr}
+                          onChange={(e) => updateSectionTitle(si, e.target.value)}
+                          placeholder="Titre de la section..."
+                          className="h-8 font-semibold"
+                        />
+                      ) : (
+                        <span className="font-semibold">{section.title_fr}</span>
+                      )}
+                    </div>
+                    {isDraft && (
+                      <div className="flex items-center gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7"
+                          onClick={() => moveSectionUp(si)}
+                          disabled={si === 0}
+                          title="Monter"
+                        >
+                          <ChevronUp className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7"
+                          onClick={() => moveSectionDown(si)}
+                          disabled={si === sections.length - 1}
+                          title="Descendre"
+                        >
+                          <ChevronDown className="h-4 w-4" />
+                        </Button>
+                        {sections.length > 1 && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7"
+                            onClick={() => deleteSection(si)}
+                            title="Supprimer la section"
+                          >
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {section.questions.length === 0 ? (
+                    <p className="text-center text-sm text-muted-foreground py-4">
+                      Aucune question dans cette section.
+                    </p>
+                  ) : (
+                    <DndContext
+                      sensors={sensors}
+                      collisionDetection={closestCenter}
+                      onDragEnd={handleDragEnd(si)}
+                    >
+                      <SortableContext
+                        items={section.questions.map((q) => q.id)}
+                        strategy={verticalListSortingStrategy}
+                      >
+                        <div className="space-y-4">
+                          {section.questions.map((q, qi) => (
+                            <QuestionCard
+                              key={q.id}
+                              question={q}
+                              index={questionOffset + qi}
+                              onChange={(updated) => updateQuestion(si, qi, updated)}
+                              onDelete={() => deleteQuestion(si, qi)}
+                              disabled={!isDraft}
+                            />
+                          ))}
+                        </div>
+                      </SortableContext>
+                    </DndContext>
+                  )}
+
+                  {isDraft && (
+                    <div className="flex justify-center">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => addQuestion(si)}
+                      >
+                        <Plus className="mr-1 h-3 w-3" />
+                        Ajouter une question
+                      </Button>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })
         )}
 
-        {isDraft && questions.length > 0 && (
+        {isDraft && sections.length > 0 && (
           <div className="flex justify-center">
-            <Button variant="outline" onClick={addQuestion}>
-              <Plus className="mr-2 h-4 w-4" />
-              Ajouter une question
+            <Button variant="outline" onClick={addSection}>
+              <FolderOpen className="mr-2 h-4 w-4" />
+              Ajouter une section
             </Button>
           </div>
         )}

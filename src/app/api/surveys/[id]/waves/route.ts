@@ -55,13 +55,15 @@ export async function GET(
     });
   }
 
-  // Get Likert questions from the current survey (we'll track these across waves)
+  // Get Likert questions from the current survey (reference for matching)
   const { data: likertQuestions } = await admin
     .from("questions")
-    .select("id, text_fr, text_en, sort_order")
+    .select("id, text_fr, text_en, sort_order, question_code")
     .eq("survey_id", surveyId)
     .eq("type", "likert")
     .order("sort_order");
+
+  const refQuestions = likertQuestions || [];
 
   // For each wave survey, calculate averages for matching Likert questions
   const waveData = [];
@@ -100,19 +102,44 @@ export async function GET(
     // Get Likert questions for this wave's survey
     const { data: waveQuestions } = await admin
       .from("questions")
-      .select("id, text_fr, sort_order")
+      .select("id, text_fr, sort_order, question_code")
       .eq("survey_id", ws.id)
       .eq("type", "likert")
       .order("sort_order");
 
-    // Calculate averages
+    // Match wave questions to reference questions by question_code (preferred) or positional fallback
     const questionAverages = [];
 
-    for (const wq of waveQuestions || []) {
+    for (let ri = 0; ri < refQuestions.length; ri++) {
+      const ref = refQuestions[ri];
+
+      // Find the matching wave question: first try question_code, then fall back to position
+      let matchedWq = null;
+      if (ref.question_code) {
+        matchedWq = (waveQuestions || []).find(
+          (wq) => wq.question_code === ref.question_code
+        );
+      }
+      if (!matchedWq) {
+        matchedWq = (waveQuestions || [])[ri] || null;
+      }
+
+      if (!matchedWq) {
+        questionAverages.push({
+          questionCode: ref.question_code || null,
+          questionId: ref.id,
+          text_fr: ref.text_fr,
+          sortOrder: ref.sort_order,
+          average: null,
+          answerCount: 0,
+        });
+        continue;
+      }
+
       const { data: answers } = await admin
         .from("answers")
         .select("numeric_value")
-        .eq("question_id", wq.id)
+        .eq("question_id", matchedWq.id)
         .in("response_id", responseIds);
 
       const values = (answers || [])
@@ -125,9 +152,10 @@ export async function GET(
           : null;
 
       questionAverages.push({
-        questionId: wq.id,
-        text_fr: wq.text_fr,
-        sortOrder: wq.sort_order,
+        questionCode: ref.question_code || null,
+        questionId: matchedWq.id,
+        text_fr: ref.text_fr,
+        sortOrder: ref.sort_order,
         average: avg,
         answerCount: values.length,
       });
@@ -149,6 +177,6 @@ export async function GET(
     waveGroup,
     currentSurveyId: surveyId,
     waves: waveData,
-    referenceQuestions: likertQuestions || [],
+    referenceQuestions: refQuestions,
   });
 }

@@ -40,6 +40,8 @@ type ParsedQuestion = {
   text_fr: string;
   text_en: string;
   type: QuestionType;
+  question_code: string;
+  section: string;
   options: { text_fr: string; text_en: string }[];
   selected: boolean;
 };
@@ -147,16 +149,60 @@ export default function ImportPage() {
 
     const startOrder = existingQuestions?.length || 0;
 
+    // Get existing sections count for sort_order
+    const { data: existingSections } = await supabase
+      .from("survey_sections")
+      .select("id, title_fr")
+      .eq("survey_id", surveyId);
+
+    const sectionStartOrder = existingSections?.length || 0;
+
+    // Build section map: section name -> section id
+    const sectionMap: Record<string, string> = {};
+    for (const sec of existingSections || []) {
+      sectionMap[sec.title_fr] = sec.id;
+    }
+
+    // Detect unique sections from parsed questions
+    const newSectionNames = [
+      ...new Set(selectedQuestions.map((q) => q.section).filter(Boolean)),
+    ].filter((name) => !sectionMap[name]);
+
+    // Create new sections
+    for (let i = 0; i < newSectionNames.length; i++) {
+      const { data: insertedSec, error: secError } = await supabase
+        .from("survey_sections")
+        .insert({
+          survey_id: surveyId,
+          title_fr: newSectionNames[i],
+          sort_order: sectionStartOrder + i,
+        })
+        .select("id")
+        .single();
+
+      if (secError || !insertedSec) {
+        toast.error(`Erreur section "${newSectionNames[i]}"`, {
+          description: secError?.message,
+        });
+        setImporting(false);
+        return;
+      }
+      sectionMap[newSectionNames[i]] = insertedSec.id;
+    }
+
     for (let i = 0; i < selectedQuestions.length; i++) {
       const q = selectedQuestions[i];
+      const sectionId = q.section ? sectionMap[q.section] || null : null;
 
       const { data: insertedQ, error: qError } = await supabase
         .from("questions")
         .insert({
           survey_id: surveyId,
+          section_id: sectionId,
           type: q.type,
           text_fr: q.text_fr,
           text_en: q.text_en || null,
+          question_code: q.question_code || null,
           sort_order: startOrder + i,
           required: true,
         })

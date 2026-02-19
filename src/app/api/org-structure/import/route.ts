@@ -7,6 +7,7 @@ import { randomUUID } from "crypto";
 type EmployeeRow = {
   nom: string;
   email: string;
+  societe: string;
   direction: string;
   departement: string;
   service: string;
@@ -47,13 +48,14 @@ function parseFile(buffer: ArrayBuffer, filename: string): ParsedData {
     const n = normalize(h);
     if (n.includes("nom") || n.includes("name")) headerMap["nom"] = h;
     else if (n.includes("email") || n.includes("mail")) headerMap["email"] = h;
+    else if (n.includes("societe") || n.includes("company")) headerMap["societe"] = h;
     else if (n.includes("direction")) headerMap["direction"] = h;
     else if (n.includes("departement") || n.includes("department"))
       headerMap["departement"] = h;
     else if (n.includes("service")) headerMap["service"] = h;
   }
 
-  const requiredCols = ["nom", "email", "direction", "departement", "service"];
+  const requiredCols = ["nom", "email", "societe", "direction", "departement", "service"];
   for (const col of requiredCols) {
     if (!headerMap[col]) {
       errors.push(
@@ -74,6 +76,7 @@ function parseFile(buffer: ArrayBuffer, filename: string): ParsedData {
 
     const nom = (row[headerMap["nom"]] || "").toString().trim();
     const email = (row[headerMap["email"]] || "").toString().trim().toLowerCase();
+    const societe = (row[headerMap["societe"]] || "").toString().trim();
     const direction = (row[headerMap["direction"]] || "").toString().trim();
     const departement = (row[headerMap["departement"]] || "").toString().trim();
     const service = (row[headerMap["service"]] || "").toString().trim();
@@ -84,6 +87,10 @@ function parseFile(buffer: ArrayBuffer, filename: string): ParsedData {
     }
     if (!email || !email.includes("@")) {
       errors.push(`Ligne ${lineNum}: email invalide "${email}"`);
+      continue;
+    }
+    if (!societe) {
+      errors.push(`Ligne ${lineNum}: société manquante`);
       continue;
     }
     if (!direction) {
@@ -97,7 +104,7 @@ function parseFile(buffer: ArrayBuffer, filename: string): ParsedData {
     }
     seenEmails.add(email);
 
-    employees.push({ nom, email, direction, departement, service });
+    employees.push({ nom, email, societe, direction, departement, service });
   }
 
   return { employees, errors };
@@ -143,12 +150,14 @@ export async function POST(request: Request) {
   const admin = createAdminClient();
 
   // Build unique org units
-  const directions = new Set<string>();
+  const societes = new Set<string>();
+  const directions = new Map<string, string>(); // direction -> societe
   const departments = new Map<string, string>(); // dept -> direction
   const services = new Map<string, string>(); // service -> dept
 
   for (const emp of employees) {
-    directions.add(emp.direction);
+    societes.add(emp.societe);
+    directions.set(emp.direction, emp.societe);
     if (emp.departement) {
       departments.set(emp.departement, emp.direction);
     }
@@ -157,14 +166,46 @@ export async function POST(request: Request) {
     }
   }
 
+  // Insert societes
+  const societeIds = new Map<string, string>();
+  for (const socName of societes) {
+    const { data: existing } = await admin
+      .from("organizations")
+      .select("id")
+      .eq("name", socName)
+      .eq("type", "societe")
+      .single();
+
+    if (existing) {
+      societeIds.set(socName, existing.id);
+    } else {
+      const { data: inserted, error } = await admin
+        .from("organizations")
+        .insert({ name: socName, type: "societe", parent_id: null })
+        .select("id")
+        .single();
+
+      if (error) {
+        return NextResponse.json(
+          { error: `Erreur création société "${socName}": ${error.message}` },
+          { status: 500 }
+        );
+      }
+      societeIds.set(socName, inserted.id);
+    }
+  }
+
   // Insert directions
   const directionIds = new Map<string, string>();
-  for (const dirName of directions) {
+  for (const [dirName, socName] of directions) {
+    const parentId = societeIds.get(socName)!;
+
     const { data: existing } = await admin
       .from("organizations")
       .select("id")
       .eq("name", dirName)
       .eq("type", "direction")
+      .eq("parent_id", parentId)
       .single();
 
     if (existing) {
@@ -172,7 +213,7 @@ export async function POST(request: Request) {
     } else {
       const { data: inserted, error } = await admin
         .from("organizations")
-        .insert({ name: dirName, type: "direction", parent_id: null })
+        .insert({ name: dirName, type: "direction", parent_id: parentId })
         .select("id")
         .single();
 
@@ -255,6 +296,7 @@ export async function POST(request: Request) {
     email: string;
     nom: string;
     token: string;
+    societe: string;
     direction: string;
     departement: string;
     service: string;
@@ -262,6 +304,7 @@ export async function POST(request: Request) {
 
   for (const emp of employees) {
     const token = randomUUID();
+    const socId = societeIds.get(emp.societe) || null;
     const dirId = directionIds.get(emp.direction) || null;
     const deptId = emp.departement
       ? departmentIds.get(emp.departement) || null
@@ -272,6 +315,7 @@ export async function POST(request: Request) {
       token,
       email: emp.email,
       employee_name: emp.nom,
+      societe_id: socId,
       direction_id: dirId,
       department_id: deptId,
       service_id: svcId,
@@ -288,6 +332,7 @@ export async function POST(request: Request) {
       email: emp.email,
       nom: emp.nom,
       token,
+      societe: emp.societe,
       direction: emp.direction,
       departement: emp.departement,
       service: emp.service,
@@ -299,6 +344,7 @@ export async function POST(request: Request) {
     errors,
     summary: {
       employees: employees.length,
+      societes: societes.size,
       directions: directions.size,
       departments: departments.size,
       services: services.size,

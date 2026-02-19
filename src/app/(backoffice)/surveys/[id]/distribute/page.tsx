@@ -43,6 +43,7 @@ import QRCode from "qrcode";
 type TokenInfo = {
   id: string;
   token: string;
+  societe_name: string | null;
   direction_name: string | null;
   department_name: string | null;
   service_name: string | null;
@@ -86,7 +87,7 @@ export default function DistributePage() {
     const { data: tokensData } = await supabase
       .from("anonymous_tokens")
       .select(
-        "id, token, direction_id, department_id, service_id"
+        "id, token, societe_id, direction_id, department_id, service_id"
       );
 
     if (tokensData && tokensData.length > 0) {
@@ -103,6 +104,7 @@ export default function DistributePage() {
         tokensData.map((t) => ({
           id: t.id,
           token: t.token,
+          societe_name: t.societe_id ? orgMap.get(t.societe_id) || null : null,
           direction_name: t.direction_id ? orgMap.get(t.direction_id) || null : null,
           department_name: t.department_id ? orgMap.get(t.department_id) || null : null,
           service_name: t.service_id ? orgMap.get(t.service_id) || null : null,
@@ -178,10 +180,11 @@ export default function DistributePage() {
 
     const baseUrl = window.location.origin;
     const rows = [
-      ["token", "lien_sondage", "direction", "département", "service"],
+      ["token", "lien_sondage", "société", "direction", "département", "service"],
       ...tokens.map((t) => [
         t.token,
         `${baseUrl}/s/${surveyId}?t=${t.token}`,
+        t.societe_name || "",
         t.direction_name || "",
         t.department_name || "",
         t.service_name || "",

@@ -45,6 +45,7 @@ type WaveData = {
   responseCount: number;
   anonymityBlocked: boolean;
   questionAverages: {
+    questionCode: string | null;
     questionId: string;
     text_fr: string;
     sortOrder: number;
@@ -61,6 +62,7 @@ type WavesResponse = {
     id: string;
     text_fr: string;
     text_en: string | null;
+    question_code: string | null;
     sort_order: number;
   }[];
   error?: string;
@@ -127,34 +129,39 @@ export default function WavesPage() {
   // each question is a line
   const validWaves = data.waves.filter((w) => !w.anonymityBlocked);
 
-  // Build data points: one entry per wave, with question averages as keys
+  // Build question labels from reference questions
+  const questionLabels: { key: string; code: string | null; label: string }[] =
+    data.referenceQuestions.map((rq, i) => ({
+      key: rq.question_code || `q${i}`,
+      code: rq.question_code,
+      label:
+        (rq.question_code ? `[${rq.question_code}] ` : "") +
+        (rq.text_fr.length > 35
+          ? rq.text_fr.substring(0, 35) + "..."
+          : rq.text_fr),
+    }));
+
+  // Build data points: one entry per wave, with question keys
   const chartData = validWaves.map((w) => {
     const point: Record<string, string | number | null> = {
       name: `Vague ${w.waveNumber}`,
       waveNumber: w.waveNumber,
     };
 
-    w.questionAverages.forEach((qa, i) => {
-      point[`q${i}`] = qa.average;
+    questionLabels.forEach((ql, i) => {
+      // Match by question_code if available, otherwise by position
+      let qa;
+      if (ql.code) {
+        qa = w.questionAverages.find((a) => a.questionCode === ql.code);
+      }
+      if (!qa) {
+        qa = w.questionAverages[i];
+      }
+      point[ql.key] = qa?.average ?? null;
     });
 
     return point;
   });
-
-  // Get question labels from the first valid wave
-  const questionLabels: { key: string; label: string }[] = [];
-  if (validWaves.length > 0) {
-    const firstWave = validWaves[0];
-    firstWave.questionAverages.forEach((qa, i) => {
-      questionLabels.push({
-        key: `q${i}`,
-        label:
-          qa.text_fr.length > 40
-            ? qa.text_fr.substring(0, 40) + "..."
-            : qa.text_fr,
-      });
-    });
-  }
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
@@ -303,8 +310,19 @@ export default function WavesPage() {
                 <tbody>
                   {questionLabels.map((ql, qi) => {
                     const values = validWaves
-                      .map((w) => w.questionAverages[qi]?.average)
-                      .filter((v): v is number => v !== null && v !== undefined);
+                      .map((w) => {
+                        let qa;
+                        if (ql.code) {
+                          qa = w.questionAverages.find(
+                            (a) => a.questionCode === ql.code
+                          );
+                        }
+                        if (!qa) {
+                          qa = w.questionAverages[qi];
+                        }
+                        return qa?.average ?? null;
+                      })
+                      .filter((v): v is number => v !== null);
 
                     const trend =
                       values.length >= 2
@@ -317,12 +335,19 @@ export default function WavesPage() {
                           {ql.label}
                         </td>
                         {validWaves.map((w) => {
-                          const avg = w.questionAverages[qi]?.average;
+                          let qa;
+                          if (ql.code) {
+                            qa = w.questionAverages.find(
+                              (a) => a.questionCode === ql.code
+                            );
+                          }
+                          if (!qa) {
+                            qa = w.questionAverages[qi];
+                          }
+                          const avg = qa?.average ?? null;
                           return (
                             <td key={w.surveyId} className="p-2 text-center">
-                              {avg !== null && avg !== undefined
-                                ? avg.toFixed(1)
-                                : "—"}
+                              {avg !== null ? avg.toFixed(1) : "—"}
                             </td>
                           );
                         })}

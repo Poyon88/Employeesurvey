@@ -33,6 +33,7 @@ export async function GET(
 
   // Get filter params
   const { searchParams } = new URL(request.url);
+  const societeId = searchParams.get("societe_id");
   const directionId = searchParams.get("direction_id");
   const departmentId = searchParams.get("department_id");
   const serviceId = searchParams.get("service_id");
@@ -71,17 +72,19 @@ export async function GET(
   // Build responses query with org filters
   let responsesQuery = admin
     .from("responses")
-    .select("id, direction_id, department_id, service_id")
+    .select("id, societe_id, direction_id, department_id, service_id")
     .eq("survey_id", surveyId);
 
+  if (societeId) responsesQuery = responsesQuery.eq("societe_id", societeId);
   if (directionId) responsesQuery = responsesQuery.eq("direction_id", directionId);
   if (departmentId) responsesQuery = responsesQuery.eq("department_id", departmentId);
   if (serviceId) responsesQuery = responsesQuery.eq("service_id", serviceId);
 
   // For managers, filter by allowed orgs
   if (allowedOrgIds) {
-    responsesQuery = responsesQuery.in("direction_id", allowedOrgIds)
-      .or(`department_id.in.(${allowedOrgIds.join(",")}),service_id.in.(${allowedOrgIds.join(",")})`);
+    responsesQuery = responsesQuery.or(
+      `societe_id.in.(${allowedOrgIds.join(",")}),direction_id.in.(${allowedOrgIds.join(",")}),department_id.in.(${allowedOrgIds.join(",")}),service_id.in.(${allowedOrgIds.join(",")})`
+    );
   }
 
   const { data: responses } = await responsesQuery;
@@ -100,10 +103,17 @@ export async function GET(
 
   const responseIds = responses!.map((r) => r.id);
 
+  // Load sections
+  const { data: sectionRows } = await admin
+    .from("survey_sections")
+    .select("id, title_fr, sort_order")
+    .eq("survey_id", surveyId)
+    .order("sort_order");
+
   // Load questions
   const { data: questions } = await admin
     .from("questions")
-    .select("id, type, text_fr, text_en, sort_order, question_options(id, text_fr, text_en, sort_order)")
+    .select("id, type, text_fr, text_en, sort_order, section_id, question_options(id, text_fr, text_en, sort_order)")
     .eq("survey_id", surveyId)
     .order("sort_order");
 
@@ -194,6 +204,7 @@ export async function GET(
       text_fr: q.text_fr,
       text_en: q.text_en,
       sort_order: q.sort_order,
+      section_id: (q as Record<string, unknown>).section_id || null,
       ...aggregation,
     };
   });
@@ -211,6 +222,7 @@ export async function GET(
       title_en: survey.title_en,
     },
     totalResponses,
+    sections: sectionRows || [],
     questions: questionResults,
     organizations: orgs || [],
     anonymityBlocked: false,

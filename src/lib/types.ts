@@ -12,6 +12,8 @@ export type Survey = {
   title_en: string | null;
   description_fr: string | null;
   description_en: string | null;
+  introduction_fr: string | null;
+  introduction_en: string | null;
   status: SurveyStatus;
   created_by: string;
   wave_group_id: string | null;
@@ -21,12 +23,22 @@ export type Survey = {
   created_at: string;
 };
 
+export type SurveySection = {
+  id: string;
+  survey_id: string;
+  title_fr: string;
+  sort_order: number;
+  created_at: string;
+};
+
 export type Question = {
   id: string;
   survey_id: string;
+  section_id: string | null;
   type: QuestionType;
   text_fr: string;
   text_en: string | null;
+  question_code: string | null;
   sort_order: number;
   required: boolean;
   created_at: string;
@@ -54,6 +66,7 @@ export type AnonymousToken = {
   token: string;
   email: string | null;
   employee_name: string | null;
+  societe_id: string | null;
   direction_id: string | null;
   department_id: string | null;
   service_id: string | null;

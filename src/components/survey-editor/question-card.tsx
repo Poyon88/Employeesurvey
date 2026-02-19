@@ -24,6 +24,7 @@ export type EditableQuestion = {
   type: QuestionType;
   text_fr: string;
   text_en: string;
+  question_code: string;
   required: boolean;
   options: EditableOption[];
 };
@@ -178,6 +179,19 @@ export function QuestionCard({
                   <SelectItem value="free_text">Texte libre</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Code question</Label>
+              <Input
+                value={question.question_code}
+                onChange={(e) => updateField("question_code", e.target.value)}
+                placeholder="ex: SAT-01"
+                disabled={disabled}
+                className="font-mono text-sm"
+              />
+              <p className="text-xs text-muted-foreground">
+                Identifiant stable pour le suivi longitudinal
+              </p>
             </div>
           </div>
 

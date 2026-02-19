@@ -4,6 +4,8 @@ export type ParsedQuestion = {
   text_fr: string;
   text_en: string;
   type: "single_choice" | "multiple_choice" | "likert" | "free_text";
+  question_code: string;
+  section: string;
   options: { text_fr: string; text_en: string }[];
 };
 
@@ -29,6 +31,9 @@ Règles :
 - Pour les options, fournis aussi text_fr et text_en si disponible.
 - Si le document a un titre identifiable, inclus-le dans documentTitle.
 
+- Génère un code court et unique pour chaque question (question_code). Ce code servira à identifier la question de façon stable pour le suivi longitudinal. Utilise un préfixe thématique suivi d'un numéro, ex: "SAT-01", "ENG-03", "MGT-02", "ENV-01".
+- Identifie les sections/thèmes du questionnaire. Chaque question doit avoir un champ "section" contenant le nom de la section à laquelle elle appartient (ex: "Satisfaction générale", "Management", "Environnement de travail"). Si le document ne contient pas de sections explicites, regroupe les questions par thème.
+
 Retourne UNIQUEMENT un JSON valide (pas de markdown, pas de texte autour) avec ce format :
 {
   "documentTitle": "Titre du questionnaire (optionnel)",
@@ -37,6 +42,8 @@ Retourne UNIQUEMENT un JSON valide (pas de markdown, pas de texte autour) avec c
       "text_fr": "Texte de la question en français",
       "text_en": "",
       "type": "single_choice",
+      "question_code": "SAT-01",
+      "section": "Satisfaction générale",
       "options": [
         { "text_fr": "Option 1", "text_en": "" },
         { "text_fr": "Option 2", "text_en": "" }
@@ -94,6 +101,8 @@ export async function parseQuestionnaire(
     )
       ? q.type
       : "free_text",
+    question_code: q.question_code || "",
+    section: q.section || "",
     options: Array.isArray(q.options)
       ? q.options.map((o) => ({
           text_fr: o.text_fr || "",

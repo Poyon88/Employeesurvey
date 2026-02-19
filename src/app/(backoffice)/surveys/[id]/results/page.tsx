@@ -63,12 +63,19 @@ type OptionResult = {
   percentage: number;
 };
 
+type SectionInfo = {
+  id: string;
+  title_fr: string;
+  sort_order: number;
+};
+
 type QuestionResult = {
   id: string;
   type: string;
   text_fr: string;
   text_en: string | null;
   sort_order: number;
+  section_id: string | null;
   // choices
   options?: OptionResult[];
   totalAnswers?: number;
@@ -82,6 +89,7 @@ type QuestionResult = {
 type ResultsData = {
   survey: { id: string; title_fr: string; title_en: string | null } | null;
   totalResponses: number;
+  sections: SectionInfo[];
   questions: QuestionResult[];
   organizations?: Org[];
   anonymityBlocked?: boolean;
@@ -94,6 +102,7 @@ export default function ResultsPage() {
 
   const [data, setData] = useState<ResultsData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [societeId, setSocieteId] = useState<string>("");
   const [directionId, setDirectionId] = useState<string>("");
   const [departmentId, setDepartmentId] = useState<string>("");
   const [serviceId, setServiceId] = useState<string>("");
@@ -101,6 +110,7 @@ export default function ResultsPage() {
   const loadResults = useCallback(async () => {
     setLoading(true);
     const params = new URLSearchParams();
+    if (societeId) params.set("societe_id", societeId);
     if (directionId) params.set("direction_id", directionId);
     if (departmentId) params.set("department_id", departmentId);
     if (serviceId) params.set("service_id", serviceId);
@@ -117,14 +127,18 @@ export default function ResultsPage() {
     const json = await res.json();
     setData(json);
     setLoading(false);
-  }, [surveyId, directionId, departmentId, serviceId]);
+  }, [surveyId, societeId, directionId, departmentId, serviceId]);
 
   useEffect(() => {
     loadResults();
   }, [loadResults]);
 
+  const societes =
+    data?.organizations?.filter((o) => o.type === "societe") || [];
   const directions =
-    data?.organizations?.filter((o) => o.type === "direction") || [];
+    data?.organizations?.filter(
+      (o) => o.type === "direction" && (!societeId || o.parent_id === societeId)
+    ) || [];
   const departments =
     data?.organizations?.filter(
       (o) => o.type === "department" && (!directionId || o.parent_id === directionId)
@@ -172,7 +186,29 @@ export default function ResultsPage() {
             <CardTitle className="text-base">Filtrer par structure</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid gap-3 sm:grid-cols-3">
+            <div className="grid gap-3 sm:grid-cols-4">
+              <Select
+                value={societeId}
+                onValueChange={(v) => {
+                  setSocieteId(v === "all" ? "" : v);
+                  setDirectionId("");
+                  setDepartmentId("");
+                  setServiceId("");
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Société" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Toutes les sociétés</SelectItem>
+                  {societes.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>
+                      {s.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
               <Select
                 value={directionId}
                 onValueChange={(v) => {
@@ -180,6 +216,7 @@ export default function ResultsPage() {
                   setDepartmentId("");
                   setServiceId("");
                 }}
+                disabled={!societeId}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Direction" />
@@ -249,8 +286,22 @@ export default function ResultsPage() {
 
       {/* Question results */}
       {!data?.anonymityBlocked &&
-        data?.questions.map((q, i) => (
-          <Card key={q.id}>
+        data?.questions.map((q, i) => {
+          // Show section header when entering a new section
+          const prevSectionId = i > 0 ? data.questions[i - 1].section_id : null;
+          const showSection = q.section_id && q.section_id !== prevSectionId;
+          const sectionTitle = showSection
+            ? data.sections?.find((s) => s.id === q.section_id)?.title_fr
+            : null;
+
+          return (
+            <div key={q.id} className="space-y-4">
+              {sectionTitle && (
+                <div className="rounded-lg border-l-4 border-primary bg-muted/50 px-4 py-3 mt-2">
+                  <h3 className="font-semibold text-sm">{sectionTitle}</h3>
+                </div>
+              )}
+              <Card>
             <CardHeader>
               <div className="flex items-center gap-2">
                 <Badge variant="outline" className="text-xs">
@@ -394,7 +445,9 @@ export default function ResultsPage() {
               )}
             </CardContent>
           </Card>
-        ))}
+            </div>
+          );
+        })}
 
       {!data?.anonymityBlocked &&
         data?.questions.length === 0 &&
