@@ -20,6 +20,14 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Upload,
   Download,
@@ -81,6 +89,7 @@ export default function OrgStructurePage() {
   const [importErrors, setImportErrors] = useState<string[]>([]);
   const [summary, setSummary] = useState<ImportSummary | null>(null);
   const [tokenMappings, setTokenMappings] = useState<TokenMapping[]>([]);
+  const [selectedSocieteId, setSelectedSocieteId] = useState<string>("all");
   const supabase = createClient();
 
   const loadOrgs = useCallback(async () => {
@@ -180,7 +189,12 @@ export default function OrgStructurePage() {
   // Build hierarchy for display
   const societesList = orgs.filter((o) => o.type === "societe");
   const directions = orgs.filter((o) => o.type === "direction");
-  const rootNodes = societesList.length > 0 ? societesList : directions;
+  const filteredSocietes =
+    selectedSocieteId === "all"
+      ? societesList
+      : societesList.filter((s) => s.id === selectedSocieteId);
+  const rootNodes =
+    societesList.length > 0 ? filteredSocietes : directions;
   const getChildren = (parentId: string) =>
     orgs.filter((o) => o.parent_id === parentId);
 
@@ -195,6 +209,26 @@ export default function OrgStructurePage() {
           </p>
         </div>
       </div>
+
+      {/* Company filter */}
+      {societesList.length > 1 && (
+        <div className="flex items-center gap-3">
+          <Label className="text-sm font-medium">Filtrer par société :</Label>
+          <Select value={selectedSocieteId} onValueChange={setSelectedSocieteId}>
+            <SelectTrigger className="w-[250px]">
+              <SelectValue placeholder="Toutes les sociétés" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Toutes les sociétés</SelectItem>
+              {societesList.map((s) => (
+                <SelectItem key={s.id} value={s.id}>
+                  {s.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
 
       {/* Upload Card */}
       <Card>

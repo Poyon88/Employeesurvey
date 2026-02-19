@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,13 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { toast } from "sonner";
 
 export default function NewSurveyPage() {
@@ -21,9 +28,23 @@ export default function NewSurveyPage() {
   const [titleEn, setTitleEn] = useState("");
   const [descFr, setDescFr] = useState("");
   const [descEn, setDescEn] = useState("");
+  const [societeId, setSocieteId] = useState("");
+  const [societes, setSocietes] = useState<{ id: string; name: string }[]>([]);
   const [saving, setSaving] = useState(false);
   const router = useRouter();
   const supabase = createClient();
+
+  useEffect(() => {
+    async function loadSocietes() {
+      const { data } = await supabase
+        .from("organizations")
+        .select("id, name")
+        .eq("type", "societe")
+        .order("name");
+      setSocietes(data || []);
+    }
+    loadSocietes();
+  }, [supabase]);
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -39,6 +60,12 @@ export default function NewSurveyPage() {
       return;
     }
 
+    if (!societeId) {
+      toast.error("Veuillez sélectionner une société");
+      setSaving(false);
+      return;
+    }
+
     const { data, error } = await supabase
       .from("surveys")
       .insert({
@@ -48,6 +75,7 @@ export default function NewSurveyPage() {
         description_en: descEn || null,
         created_by: user.id,
         status: "draft",
+        societe_id: societeId,
       })
       .select("id")
       .single();
@@ -79,6 +107,21 @@ export default function NewSurveyPage() {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleCreate} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="societe">Société *</Label>
+              <Select value={societeId} onValueChange={setSocieteId}>
+                <SelectTrigger id="societe">
+                  <SelectValue placeholder="Sélectionnez une société..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {societes.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>
+                      {s.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <div className="space-y-2">
               <Label htmlFor="title_fr">Titre (FR) *</Label>
               <Input

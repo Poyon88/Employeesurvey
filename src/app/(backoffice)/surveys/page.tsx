@@ -17,6 +17,10 @@ import { toast } from "sonner";
 import Link from "next/link";
 import type { Survey } from "@/lib/types";
 
+type SurveyWithSociete = Survey & {
+  societe: { id: string; name: string } | null;
+};
+
 const STATUS_LABELS: Record<string, string> = {
   draft: "Brouillon",
   published: "Publié",
@@ -30,7 +34,7 @@ const STATUS_COLORS: Record<string, "default" | "secondary" | "destructive" | "o
 };
 
 export default function SurveysPage() {
-  const [surveys, setSurveys] = useState<Survey[]>([]);
+  const [surveys, setSurveys] = useState<SurveyWithSociete[]>([]);
   const [loading, setLoading] = useState(true);
   const supabase = createClient();
 
@@ -38,7 +42,7 @@ export default function SurveysPage() {
     setLoading(true);
     const { data, error } = await supabase
       .from("surveys")
-      .select("*")
+      .select("*, societe:organizations!societe_id(id, name)")
       .order("created_at", { ascending: false });
 
     if (error) {
@@ -91,6 +95,7 @@ export default function SurveysPage() {
           <TableHeader>
             <TableRow>
               <TableHead>Titre</TableHead>
+              <TableHead>Société</TableHead>
               <TableHead>Statut</TableHead>
               <TableHead>Créé le</TableHead>
               <TableHead>Publié le</TableHead>
@@ -100,13 +105,13 @@ export default function SurveysPage() {
           <TableBody>
             {loading ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center py-8">
+                <TableCell colSpan={6} className="text-center py-8">
                   Chargement...
                 </TableCell>
               </TableRow>
             ) : surveys.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
                   Aucun sondage. Créez votre premier sondage.
                 </TableCell>
               </TableRow>
@@ -117,6 +122,11 @@ export default function SurveysPage() {
                     <Link href={`/surveys/${survey.id}/edit`} className="hover:underline">
                       {survey.title_fr}
                     </Link>
+                  </TableCell>
+                  <TableCell>
+                    {survey.societe?.name || (
+                      <span className="text-muted-foreground">—</span>
+                    )}
                   </TableCell>
                   <TableCell>
                     <Badge variant={STATUS_COLORS[survey.status]}>

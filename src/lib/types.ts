@@ -16,6 +16,7 @@ export type Survey = {
   introduction_en: string | null;
   status: SurveyStatus;
   created_by: string;
+  societe_id: string | null;
   wave_group_id: string | null;
   wave_number: number;
   published_at: string | null;

@@ -34,7 +34,7 @@ export async function POST(
   const admin = createAdminClient();
   const { data: survey, error: surveyError } = await admin
     .from("surveys")
-    .select("title_fr, status")
+    .select("title_fr, status, societe_id")
     .eq("id", surveyId)
     .single();
 
@@ -52,12 +52,18 @@ export async function POST(
     );
   }
 
-  // Get tokens with emails that haven't been invited yet
-  const { data: uninvitedTokens, error: tokensError } = await admin
+  // Get tokens with emails that haven't been invited yet (filtered by survey's company)
+  let tokensQuery = admin
     .from("anonymous_tokens")
     .select("id, token, email, employee_name")
     .not("email", "is", null)
     .is("invitation_sent_at", null);
+
+  if (survey.societe_id) {
+    tokensQuery = tokensQuery.eq("societe_id", survey.societe_id);
+  }
+
+  const { data: uninvitedTokens, error: tokensError } = await tokensQuery;
 
   if (tokensError) {
     return NextResponse.json(

@@ -76,6 +76,8 @@ export default function SurveyEditPage() {
   const [descEn, setDescEn] = useState("");
   const [introFr, setIntroFr] = useState("");
   const [introEn, setIntroEn] = useState("");
+  const [societeId, setSocieteId] = useState<string>("");
+  const [societes, setSocietes] = useState<{ id: string; name: string }[]>([]);
   const [waveGroupId, setWaveGroupId] = useState<string>("");
   const [waveNumber, setWaveNumber] = useState<number>(1);
   const [waveGroups, setWaveGroups] = useState<{ id: string; name: string }[]>([]);
@@ -118,8 +120,17 @@ export default function SurveyEditPage() {
     setDescEn(surveyData.description_en || "");
     setIntroFr(surveyData.introduction_fr || "");
     setIntroEn(surveyData.introduction_en || "");
+    setSocieteId(surveyData.societe_id || "");
     setWaveGroupId(surveyData.wave_group_id || "");
     setWaveNumber(surveyData.wave_number || 1);
+
+    // Load societes
+    const { data: socData } = await supabase
+      .from("organizations")
+      .select("id, name")
+      .eq("type", "societe")
+      .order("name");
+    setSocietes(socData || []);
 
     // Load wave groups
     const { data: wgData } = await supabase
@@ -356,6 +367,7 @@ export default function SurveyEditPage() {
         description_en: descEn || null,
         introduction_fr: introFr || null,
         introduction_en: introEn || null,
+        societe_id: societeId || null,
         wave_group_id: waveGroupId || null,
         wave_number: waveNumber,
       })
@@ -635,6 +647,26 @@ export default function SurveyEditPage() {
                 disabled={!isDraft}
               />
             </div>
+          </div>
+          <div className="space-y-2">
+            <Label>Société *</Label>
+            <Select
+              value={societeId || "none"}
+              onValueChange={(v) => setSocieteId(v === "none" ? "" : v)}
+              disabled={!isDraft}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Sélectionnez une société..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Aucune société</SelectItem>
+                {societes.map((s) => (
+                  <SelectItem key={s.id} value={s.id}>
+                    {s.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">

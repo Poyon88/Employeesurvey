@@ -57,6 +57,7 @@ export default function DistributePage() {
   const [survey, setSurvey] = useState<{
     title_fr: string;
     status: string;
+    societe_id: string | null;
   } | null>(null);
   const [tokens, setTokens] = useState<TokenInfo[]>([]);
   const [responseCount, setResponseCount] = useState(0);
@@ -77,18 +78,24 @@ export default function DistributePage() {
     // Load survey
     const { data: surveyData } = await supabase
       .from("surveys")
-      .select("title_fr, status")
+      .select("title_fr, status, societe_id")
       .eq("id", surveyId)
       .single();
 
     if (surveyData) setSurvey(surveyData);
 
-    // Load tokens with org names
-    const { data: tokensData } = await supabase
+    // Load tokens with org names (filtered by survey's company)
+    let tokensQuery = supabase
       .from("anonymous_tokens")
       .select(
         "id, token, societe_id, direction_id, department_id, service_id"
       );
+
+    if (surveyData?.societe_id) {
+      tokensQuery = tokensQuery.eq("societe_id", surveyData.societe_id);
+    }
+
+    const { data: tokensData } = await tokensQuery;
 
     if (tokensData && tokensData.length > 0) {
       // Load organizations for name resolution
@@ -120,11 +127,17 @@ export default function DistributePage() {
 
     setResponseCount(count || 0);
 
-    // Load email stats
-    const { data: tokensWithEmail } = await supabase
+    // Load email stats (filtered by survey's company)
+    let emailQuery = supabase
       .from("anonymous_tokens")
       .select("id, email, invitation_sent_at")
       .not("email", "is", null);
+
+    if (surveyData?.societe_id) {
+      emailQuery = emailQuery.eq("societe_id", surveyData.societe_id);
+    }
+
+    const { data: tokensWithEmail } = await emailQuery;
 
     const withEmail = tokensWithEmail || [];
     const invitedCount = withEmail.filter(
