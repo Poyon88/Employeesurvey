@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -87,8 +86,6 @@ export default function SurveyRespondentPage() {
   const tokenParam = searchParams.get("t") || "";
   const isPreview = searchParams.get("preview") === "1";
 
-  const supabase = createClient();
-
   const [token, setToken] = useState(tokenParam);
   const [tokenValidated, setTokenValidated] = useState(false);
   const [validatingToken, setValidatingToken] = useState(false);
@@ -111,61 +108,26 @@ export default function SurveyRespondentPage() {
   const loadSurvey = useCallback(async () => {
     setLoading(true);
 
-    const { data: surveyData, error: surveyError } = await supabase
-      .from("surveys")
-      .select("id, title_fr, description_fr, introduction_fr, status")
-      .eq("id", surveyId)
-      .single();
+    try {
+      const previewParam = isPreview ? "&preview=1" : "";
+      const res = await fetch(`/api/surveys/${surveyId}/public?${previewParam}`);
+      const data = await res.json();
 
-    if (surveyError || !surveyData) {
-      setError("Sondage introuvable");
-      setLoading(false);
-      return;
-    }
-
-    if (!isPreview) {
-      if (surveyData.status === "closed") {
-        setError("Ce sondage est clôturé et n'accepte plus de réponses.");
+      if (!res.ok) {
+        setError(data.error || "Sondage introuvable");
         setLoading(false);
         return;
       }
 
-      if (surveyData.status !== "published") {
-        setError("Ce sondage n'est pas disponible");
-        setLoading(false);
-        return;
-      }
-    }
-
-    setSurvey(surveyData);
-
-    // Load sections
-    const { data: sectionsData } = await supabase
-      .from("survey_sections")
-      .select("id, title_fr, sort_order")
-      .eq("survey_id", surveyId)
-      .order("sort_order");
-    setSurveySections(sectionsData || []);
-
-    const { data: questionsData } = await supabase
-      .from("questions")
-      .select("id, type, text_fr, required, sort_order, section_id, question_options(id, text_fr, sort_order)")
-      .eq("survey_id", surveyId)
-      .order("sort_order");
-
-    if (questionsData) {
-      setQuestions(
-        questionsData.map((q) => ({
-          ...q,
-          options: (
-            (q.question_options as QuestionData["options"]) || []
-          ).sort((a, b) => a.sort_order - b.sort_order),
-        }))
-      );
+      setSurvey(data.survey);
+      setSurveySections(data.sections || []);
+      setQuestions(data.questions || []);
+    } catch {
+      setError("Erreur réseau");
     }
 
     setLoading(false);
-  }, [supabase, surveyId, isPreview]);
+  }, [surveyId, isPreview]);
 
   useEffect(() => {
     loadSurvey();
@@ -174,15 +136,21 @@ export default function SurveyRespondentPage() {
   async function validateToken(t: string) {
     if (!t.trim()) return;
     setValidatingToken(true);
-    const { data } = await supabase
-      .from("anonymous_tokens")
-      .select("id")
-      .eq("token", t.trim())
-      .single();
-    if (data) {
-      setTokenValidated(true);
-    } else {
-      toast.error("Token invalide");
+    try {
+      const res = await fetch(`/api/surveys/${surveyId}/validate-token`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: t.trim() }),
+      });
+      const data = await res.json();
+      if (data.valid) {
+        setTokenValidated(true);
+      } else {
+        toast.error("Token invalide");
+        setTokenValidated(false);
+      }
+    } catch {
+      toast.error("Erreur réseau");
       setTokenValidated(false);
     }
     setValidatingToken(false);
