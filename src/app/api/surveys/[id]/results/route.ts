@@ -165,13 +165,14 @@ export async function GET(
         })),
         totalAnswers: qAnswers.length,
       };
-    } else if (q.type === "likert") {
+    } else if (q.type === "likert" || q.type === "likert_5") {
+      const maxScale = q.type === "likert_5" ? 5 : 10;
       const values = qAnswers
         .filter((a) => a.numeric_value !== null)
         .map((a) => a.numeric_value as number);
 
       const distribution: Record<number, number> = {};
-      for (let i = 1; i <= 10; i++) distribution[i] = 0;
+      for (let i = 1; i <= maxScale; i++) distribution[i] = 0;
       values.forEach((v) => (distribution[v] = (distribution[v] || 0) + 1));
 
       const avg =
@@ -180,7 +181,7 @@ export async function GET(
           : 0;
 
       aggregation = {
-        type: "likert",
+        type: q.type,
         average: Math.round(avg * 10) / 10,
         distribution: Object.entries(distribution).map(([val, count]) => ({
           value: Number(val),

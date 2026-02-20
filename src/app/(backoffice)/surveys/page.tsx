@@ -12,7 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Plus, Pencil, Trash2 } from "lucide-react";
+import { Plus, Pencil, Trash2, Eye } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
 import type { Survey } from "@/lib/types";
@@ -143,6 +143,11 @@ export default function SurveysPage() {
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-2">
+                      <Link href={`/s/${survey.id}?preview=1`} target="_blank">
+                        <Button variant="ghost" size="icon" title="Prévisualiser">
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                      </Link>
                       <Link href={`/surveys/${survey.id}/edit`}>
                         <Button variant="ghost" size="icon">
                           <Pencil className="h-4 w-4" />

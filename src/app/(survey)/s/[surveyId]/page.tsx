@@ -30,6 +30,7 @@ import {
   Send,
   Loader2,
   Globe,
+  Eye,
 } from "lucide-react";
 import { toast } from "sonner";
 import { AVAILABLE_LANGUAGES, getUIString } from "@/lib/utils/languages";
@@ -84,6 +85,7 @@ export default function SurveyRespondentPage() {
   const router = useRouter();
   const surveyId = params.surveyId as string;
   const tokenParam = searchParams.get("t") || "";
+  const isPreview = searchParams.get("preview") === "1";
 
   const supabase = createClient();
 
@@ -121,10 +123,18 @@ export default function SurveyRespondentPage() {
       return;
     }
 
-    if (surveyData.status !== "published") {
-      setError("Ce sondage n'est pas disponible");
-      setLoading(false);
-      return;
+    if (!isPreview) {
+      if (surveyData.status === "closed") {
+        setError("Ce sondage est clôturé et n'accepte plus de réponses.");
+        setLoading(false);
+        return;
+      }
+
+      if (surveyData.status !== "published") {
+        setError("Ce sondage n'est pas disponible");
+        setLoading(false);
+        return;
+      }
     }
 
     setSurvey(surveyData);
@@ -155,7 +165,7 @@ export default function SurveyRespondentPage() {
     }
 
     setLoading(false);
-  }, [supabase, surveyId]);
+  }, [supabase, surveyId, isPreview]);
 
   useEffect(() => {
     loadSurvey();
@@ -287,6 +297,7 @@ export default function SurveyRespondentPage() {
       case "multiple_choice":
         return (answer.selected_option_ids?.length ?? 0) > 0;
       case "likert":
+      case "likert_5":
         return answer.numeric_value !== undefined;
       case "free_text":
         return !!answer.text_value?.trim();
@@ -296,8 +307,9 @@ export default function SurveyRespondentPage() {
   }
 
   function canProceed(): boolean {
-    if (currentStep === 0) return tokenValidated && !!token;
+    if (currentStep === 0) return isPreview || (tokenValidated && !!token);
     if (currentStep > 0 && currentStep <= questions.length) {
+      if (isPreview) return true;
       const question = questions[currentStep - 1];
       if (question.required) return isQuestionAnswered(question);
       return true;
@@ -356,6 +368,14 @@ export default function SurveyRespondentPage() {
 
   return (
     <div className="flex min-h-screen flex-col">
+      {/* Preview banner */}
+      {isPreview && (
+        <div className="bg-amber-500 px-4 py-2 text-center text-sm font-medium text-white">
+          <Eye className="mr-2 inline h-4 w-4" />
+          Mode prévisualisation — Les réponses ne seront pas enregistrées
+        </div>
+      )}
+
       {/* Top bar */}
       <div className="border-b bg-background px-4 py-3">
         <div className="mx-auto flex max-w-2xl items-center justify-between">
@@ -422,7 +442,7 @@ export default function SurveyRespondentPage() {
                   <p className="text-sm text-muted-foreground text-center">
                     {ui("anonymous_notice")}
                   </p>
-                  {!tokenValidated && (
+                  {!isPreview && !tokenValidated && (
                     <div className="space-y-2">
                       <Label>{ui("enter_token")}</Label>
                       <Input
@@ -447,7 +467,7 @@ export default function SurveyRespondentPage() {
                       </Button>
                     </div>
                   )}
-                  {tokenValidated && (
+                  {!isPreview && tokenValidated && (
                     <p className="text-center text-sm text-green-600">
                       {ui("token_validated")}
                     </p>
@@ -497,27 +517,35 @@ export default function SurveyRespondentPage() {
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="text-center">
-                  <p className="text-sm text-muted-foreground mb-4">
-                    {ui("confirm_warning")}
-                  </p>
-                  <Button
-                    size="lg"
-                    onClick={handleSubmit}
-                    disabled={submitting}
-                    className="w-full sm:w-auto"
-                  >
-                    {submitting ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        {ui("sending")}
-                      </>
-                    ) : (
-                      <>
-                        <Send className="mr-2 h-4 w-4" />
-                        {ui("submit")}
-                      </>
-                    )}
-                  </Button>
+                  {isPreview ? (
+                    <p className="text-sm text-amber-600 font-medium">
+                      Mode prévisualisation — La soumission est désactivée.
+                    </p>
+                  ) : (
+                    <>
+                      <p className="text-sm text-muted-foreground mb-4">
+                        {ui("confirm_warning")}
+                      </p>
+                      <Button
+                        size="lg"
+                        onClick={handleSubmit}
+                        disabled={submitting}
+                        className="w-full sm:w-auto"
+                      >
+                        {submitting ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            {ui("sending")}
+                          </>
+                        ) : (
+                          <>
+                            <Send className="mr-2 h-4 w-4" />
+                            {ui("submit")}
+                          </>
+                        )}
+                      </Button>
+                    </>
+                  )}
                 </CardContent>
               </Card>
             )}
@@ -632,13 +660,13 @@ function QuestionView({
               <span>{ui("strongly_disagree")}</span>
               <span>{ui("strongly_agree")}</span>
             </div>
-            <div className="flex justify-between gap-1">
+            <div className="grid grid-cols-5 gap-2 sm:grid-cols-10 sm:gap-1">
               {Array.from({ length: 10 }, (_, i) => i + 1).map((val) => (
                 <button
                   key={val}
                   type="button"
                   onClick={() => onAnswer({ numeric_value: val })}
-                  className={`flex h-10 w-10 items-center justify-center rounded-md border text-sm font-medium transition-colors ${
+                  className={`flex h-11 items-center justify-center rounded-md border text-sm font-medium transition-colors ${
                     answer.numeric_value === val
                       ? "border-primary bg-primary text-primary-foreground"
                       : "hover:bg-muted"
@@ -651,6 +679,36 @@ function QuestionView({
             {answer.numeric_value && (
               <p className="text-center text-sm text-muted-foreground">
                 {ui("your_choice")} <strong>{answer.numeric_value}/10</strong>
+              </p>
+            )}
+          </div>
+        )}
+
+        {question.type === "likert_5" && (
+          <div className="space-y-4">
+            <div className="flex justify-between text-xs text-muted-foreground">
+              <span>{ui("strongly_disagree")}</span>
+              <span>{ui("strongly_agree")}</span>
+            </div>
+            <div className="grid grid-cols-5 gap-2">
+              {Array.from({ length: 5 }, (_, i) => i + 1).map((val) => (
+                <button
+                  key={val}
+                  type="button"
+                  onClick={() => onAnswer({ numeric_value: val })}
+                  className={`flex h-12 items-center justify-center rounded-md border text-base font-medium transition-colors ${
+                    answer.numeric_value === val
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "hover:bg-muted"
+                  }`}
+                >
+                  {val}
+                </button>
+              ))}
+            </div>
+            {answer.numeric_value && (
+              <p className="text-center text-sm text-muted-foreground">
+                {ui("your_choice")} <strong>{answer.numeric_value}/5</strong>
               </p>
             )}
           </div>

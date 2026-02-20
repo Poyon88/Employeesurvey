@@ -3,7 +3,7 @@ import Anthropic from "@anthropic-ai/sdk";
 export type ParsedQuestion = {
   text_fr: string;
   text_en: string;
-  type: "single_choice" | "multiple_choice" | "likert" | "free_text";
+  type: "single_choice" | "multiple_choice" | "likert" | "likert_5" | "free_text";
   question_code: string;
   section: string;
   options: { text_fr: string; text_en: string }[];
@@ -23,10 +23,11 @@ Règles :
 - Pour chaque question, détermine le type le plus approprié :
   - "single_choice" : question à choix unique (une seule réponse possible)
   - "multiple_choice" : question à choix multiples (plusieurs réponses possibles)
-  - "likert" : échelle de notation/satisfaction (1 à 10, accord/désaccord, etc.)
+  - "likert" : échelle de notation/satisfaction de 1 à 10
+  - "likert_5" : échelle de notation/satisfaction de 1 à 5
   - "free_text" : question ouverte nécessitant une réponse libre
 - Si des options de réponse sont listées dans le document, inclus-les.
-- Si la question est une échelle (satisfaction, accord, fréquence), utilise le type "likert".
+- Si la question est une échelle (satisfaction, accord, fréquence), utilise le type "likert" (1-10) ou "likert_5" (1-5) selon le contexte. Par défaut, utilise "likert_5" sauf si le document indique explicitement une échelle sur 10.
 - Fournis le texte en français (text_fr). Si une version anglaise est présente dans le document, inclus-la aussi (text_en), sinon laisse text_en vide.
 - Pour les options, fournis aussi text_fr et text_en si disponible.
 - Si le document a un titre identifiable, inclus-le dans documentTitle.
@@ -96,7 +97,7 @@ export async function parseQuestionnaire(
   parsed.questions = parsed.questions.map((q) => ({
     text_fr: q.text_fr || "",
     text_en: q.text_en || "",
-    type: ["single_choice", "multiple_choice", "likert", "free_text"].includes(
+    type: ["single_choice", "multiple_choice", "likert", "likert_5", "free_text"].includes(
       q.type
     )
       ? q.type

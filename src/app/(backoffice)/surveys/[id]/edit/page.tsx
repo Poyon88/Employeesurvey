@@ -76,6 +76,7 @@ export default function SurveyEditPage() {
   const [descEn, setDescEn] = useState("");
   const [introFr, setIntroFr] = useState("");
   const [introEn, setIntroEn] = useState("");
+  const [closesAt, setClosesAt] = useState<string>("");
   const [societeId, setSocieteId] = useState<string>("");
   const [societes, setSocietes] = useState<{ id: string; name: string }[]>([]);
   const [waveGroupId, setWaveGroupId] = useState<string>("");
@@ -120,6 +121,7 @@ export default function SurveyEditPage() {
     setDescEn(surveyData.description_en || "");
     setIntroFr(surveyData.introduction_fr || "");
     setIntroEn(surveyData.introduction_en || "");
+    setClosesAt(surveyData.closes_at ? surveyData.closes_at.split("T")[0] : "");
     setSocieteId(surveyData.societe_id || "");
     setWaveGroupId(surveyData.wave_group_id || "");
     setWaveNumber(surveyData.wave_number || 1);
@@ -285,7 +287,7 @@ export default function SurveyEditPage() {
           text_fr: "",
           text_en: "",
           question_code: "",
-          required: true,
+          required: false,
           options: [
             { id: crypto.randomUUID(), text_fr: "", text_en: "" },
             { id: crypto.randomUUID(), text_fr: "", text_en: "" },
@@ -367,6 +369,7 @@ export default function SurveyEditPage() {
         description_en: descEn || null,
         introduction_fr: introFr || null,
         introduction_en: introEn || null,
+        closes_at: closesAt ? new Date(closesAt).toISOString() : null,
         societe_id: societeId || null,
         wave_group_id: waveGroupId || null,
         wave_number: waveNumber,
@@ -588,65 +591,41 @@ export default function SurveyEditPage() {
           <CardDescription>Titre et description du sondage</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label>Titre (FR) *</Label>
-              <Input
-                value={titleFr}
-                onChange={(e) => setTitleFr(e.target.value)}
-                disabled={!isDraft}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Titre (EN)</Label>
-              <Input
-                value={titleEn}
-                onChange={(e) => setTitleEn(e.target.value)}
-                disabled={!isDraft}
-              />
-            </div>
+          <div className="space-y-2">
+            <Label>Titre *</Label>
+            <Input
+              value={titleFr}
+              onChange={(e) => setTitleFr(e.target.value)}
+              disabled={!isDraft}
+            />
           </div>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label>Description (FR)</Label>
-              <Textarea
-                value={descFr}
-                onChange={(e) => setDescFr(e.target.value)}
-                rows={2}
-                disabled={!isDraft}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Description (EN)</Label>
-              <Textarea
-                value={descEn}
-                onChange={(e) => setDescEn(e.target.value)}
-                rows={2}
-                disabled={!isDraft}
-              />
-            </div>
+          <div className="space-y-2">
+            <Label>Description</Label>
+            <Textarea
+              value={descFr}
+              onChange={(e) => setDescFr(e.target.value)}
+              rows={2}
+              disabled={!isDraft}
+            />
           </div>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label>Introduction (FR)</Label>
-              <Textarea
-                value={introFr}
-                onChange={(e) => setIntroFr(e.target.value)}
-                rows={4}
-                placeholder="Texte d'introduction affiché aux répondants avant le questionnaire..."
-                disabled={!isDraft}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Introduction (EN)</Label>
-              <Textarea
-                value={introEn}
-                onChange={(e) => setIntroEn(e.target.value)}
-                rows={4}
-                placeholder="Introduction text shown to respondents before the survey..."
-                disabled={!isDraft}
-              />
-            </div>
+          <div className="space-y-2">
+            <Label>Introduction</Label>
+            <Textarea
+              value={introFr}
+              onChange={(e) => setIntroFr(e.target.value)}
+              rows={4}
+              placeholder="Texte d'introduction affiché aux répondants avant le questionnaire..."
+              disabled={!isDraft}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Date de fin</Label>
+            <Input
+              type="date"
+              value={closesAt}
+              onChange={(e) => setClosesAt(e.target.value)}
+              disabled={!isDraft}
+            />
           </div>
           <div className="space-y-2">
             <Label>Société *</Label>
@@ -671,6 +650,11 @@ export default function SurveyEditPage() {
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label>Groupe de vagues (suivi longitudinal)</Label>
+              <p className="text-xs text-muted-foreground">
+                Un groupe de vagues relie plusieurs sondages réalisés à des périodes différentes
+                sur un même thème. Cela permet de suivre l&apos;évolution des résultats dans le temps
+                et de comparer les réponses d&apos;une vague à l&apos;autre (ex : baromètre social trimestriel).
+              </p>
               {showNewWaveGroup ? (
                 <div className="flex gap-2">
                   <Input

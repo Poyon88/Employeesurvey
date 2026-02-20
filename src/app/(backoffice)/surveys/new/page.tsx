@@ -28,6 +28,7 @@ export default function NewSurveyPage() {
   const [titleEn, setTitleEn] = useState("");
   const [descFr, setDescFr] = useState("");
   const [descEn, setDescEn] = useState("");
+  const [closesAt, setClosesAt] = useState("");
   const [societeId, setSocieteId] = useState("");
   const [societes, setSocietes] = useState<{ id: string; name: string }[]>([]);
   const [saving, setSaving] = useState(false);
@@ -76,6 +77,7 @@ export default function NewSurveyPage() {
         created_by: user.id,
         status: "draft",
         societe_id: societeId,
+        closes_at: closesAt ? new Date(closesAt).toISOString() : null,
       })
       .select("id")
       .single();
@@ -159,6 +161,15 @@ export default function NewSurveyPage() {
                 onChange={(e) => setDescEn(e.target.value)}
                 placeholder="Survey description..."
                 rows={3}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="closes_at">Date de fin</Label>
+              <Input
+                id="closes_at"
+                type="date"
+                value={closesAt}
+                onChange={(e) => setClosesAt(e.target.value)}
               />
             </div>
             <div className="flex gap-3 pt-2">

@@ -313,8 +313,10 @@ export default function ResultsPage() {
                     : q.type === "multiple_choice"
                       ? "Choix multiple"
                       : q.type === "likert"
-                        ? "Likert"
-                        : "Texte libre"}
+                        ? "Likert (1-10)"
+                        : q.type === "likert_5"
+                          ? "Likert (1-5)"
+                          : "Texte libre"}
                 </Badge>
               </div>
               <CardTitle className="text-base">{q.text_fr}</CardTitle>
@@ -397,7 +399,7 @@ export default function ResultsPage() {
                   </div>
                 )}
 
-              {q.type === "likert" && q.distribution && (
+              {(q.type === "likert" || q.type === "likert_5") && q.distribution && (
                 <div className="space-y-4">
                   <div className="flex items-center justify-center gap-2">
                     <BarChart3 className="h-5 w-5 text-primary" />

@@ -60,7 +60,7 @@ export async function GET(
     .from("questions")
     .select("id, text_fr, text_en, sort_order, question_code")
     .eq("survey_id", surveyId)
-    .eq("type", "likert")
+    .in("type", ["likert", "likert_5"])
     .order("sort_order");
 
   const refQuestions = likertQuestions || [];
@@ -104,7 +104,7 @@ export async function GET(
       .from("questions")
       .select("id, text_fr, sort_order, question_code")
       .eq("survey_id", ws.id)
-      .eq("type", "likert")
+      .in("type", ["likert", "likert_5"])
       .order("sort_order");
 
     // Match wave questions to reference questions by question_code (preferred) or positional fallback

@@ -82,7 +82,7 @@ export function QuestionCard({
     if (
       field === "type" &&
       (value === "single_choice" || value === "multiple_choice") &&
-      question.options.length === 0
+      updated.options.length === 0
     ) {
       updated.options = [
         { id: crypto.randomUUID(), text_fr: "", text_en: "" },
@@ -175,6 +175,7 @@ export function QuestionCard({
                 <SelectContent>
                   <SelectItem value="single_choice">Choix unique</SelectItem>
                   <SelectItem value="multiple_choice">Choix multiple</SelectItem>
+                  <SelectItem value="likert_5">Échelle de Likert (1-5)</SelectItem>
                   <SelectItem value="likert">Échelle de Likert (1-10)</SelectItem>
                   <SelectItem value="free_text">Texte libre</SelectItem>
                 </SelectContent>
@@ -263,6 +264,13 @@ export function QuestionCard({
           {question.type === "likert" && (
             <p className="text-sm text-muted-foreground">
               Les répondants choisiront une valeur de 1 (pas du tout d&apos;accord) à 10
+              (tout à fait d&apos;accord).
+            </p>
+          )}
+
+          {question.type === "likert_5" && (
+            <p className="text-sm text-muted-foreground">
+              Les répondants choisiront une valeur de 1 (pas du tout d&apos;accord) à 5
               (tout à fait d&apos;accord).
             </p>
           )}

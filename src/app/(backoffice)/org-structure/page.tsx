@@ -31,10 +31,16 @@ import {
 import {
   Upload,
   Download,
+  FileDown,
   Building2,
+  Info,
   Users,
   AlertCircle,
   CheckCircle,
+  ImagePlus,
+  Loader2,
+  Trash2,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -43,6 +49,7 @@ type OrgUnit = {
   name: string;
   type: "societe" | "direction" | "department" | "service";
   parent_id: string | null;
+  logo_url: string | null;
   created_at: string;
 };
 
@@ -53,6 +60,7 @@ type ImportSummary = {
   departments: number;
   services: number;
   tokens: number;
+  tokensUpdated: number;
 };
 
 type TokenMapping = {
@@ -90,6 +98,7 @@ export default function OrgStructurePage() {
   const [summary, setSummary] = useState<ImportSummary | null>(null);
   const [tokenMappings, setTokenMappings] = useState<TokenMapping[]>([]);
   const [selectedSocieteId, setSelectedSocieteId] = useState<string>("all");
+  const [uploadingLogoId, setUploadingLogoId] = useState<string | null>(null);
   const supabase = createClient();
 
   const loadOrgs = useCallback(async () => {
@@ -156,7 +165,7 @@ export default function OrgStructurePage() {
         setSummary(data.summary);
         setTokenMappings(data.tokenMappings || []);
         toast.success("Import réussi", {
-          description: `${data.summary.employees} employés importés, ${data.summary.tokens} tokens générés`,
+          description: `${data.summary.employees} employés traités — ${data.summary.tokens} nouveaux tokens, ${data.summary.tokensUpdated} mis à jour`,
         });
         loadOrgs();
       }
@@ -184,6 +193,94 @@ export default function OrgStructurePage() {
     link.download = "tokens_distribution.csv";
     link.click();
     URL.revokeObjectURL(url);
+  }
+
+  async function handleLogoUpload(
+    societeId: string,
+    e: React.ChangeEvent<HTMLInputElement>
+  ) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      toast.error("Veuillez sélectionner une image (PNG, JPG, SVG...)");
+      return;
+    }
+
+    setUploadingLogoId(societeId);
+
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("societeId", societeId);
+
+    const res = await fetch("/api/org-structure/logo", {
+      method: "POST",
+      body: formData,
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      toast.error("Erreur lors de l'upload", {
+        description: data.error || "Une erreur est survenue",
+      });
+    } else {
+      toast.success("Logo importé");
+      loadOrgs();
+    }
+
+    setUploadingLogoId(null);
+    e.target.value = "";
+  }
+
+  async function handleLogoDelete(societe: OrgUnit) {
+    if (!confirm(`Supprimer le logo de "${societe.name}" ?`)) return;
+
+    const res = await fetch("/api/org-structure/logo", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ societeId: societe.id }),
+    });
+
+    if (!res.ok) {
+      toast.error("Erreur lors de la suppression");
+    } else {
+      toast.success("Logo supprimé");
+      loadOrgs();
+    }
+  }
+
+  async function handleDeleteSociete(societe: OrgUnit) {
+    const confirmed = confirm(
+      `Supprimer la société "${societe.name}" ?\n\n` +
+        `⚠️ ATTENTION : Cette action est irréversible.\n\n` +
+        `Toutes les informations liées à cette société seront définitivement supprimées :\n` +
+        `- Structure organisationnelle (directions, départements, services)\n` +
+        `- Employés et tokens anonymes\n` +
+        `- Sondages associés et leurs réponses\n` +
+        `- Logo de la société`
+    );
+    if (!confirmed) return;
+
+    try {
+      const res = await fetch("/api/org-structure/societe", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ societeId: societe.id }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error("Erreur lors de la suppression", {
+          description: data.error || "Une erreur est survenue",
+        });
+      } else {
+        toast.success(`Société "${societe.name}" supprimée`);
+        loadOrgs();
+      }
+    } catch {
+      toast.error("Erreur réseau lors de la suppression");
+    }
   }
 
   // Build hierarchy for display
@@ -230,6 +327,90 @@ export default function OrgStructurePage() {
         </div>
       )}
 
+      {/* Sociétés */}
+      {societesList.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Building2 className="h-5 w-5" />
+              Sociétés
+            </CardTitle>
+            <CardDescription>
+              {filteredSocietes.length} société(s) — importez un logo pour chacune
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {filteredSocietes.map((soc) => (
+                <div
+                  key={soc.id}
+                  className="flex items-center gap-4 rounded-lg border p-4"
+                >
+                  <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-muted">
+                    {soc.logo_url ? (
+                      <img
+                        src={soc.logo_url}
+                        alt={`Logo ${soc.name}`}
+                        className="h-full w-full object-contain"
+                      />
+                    ) : (
+                      <Building2 className="h-8 w-8 text-muted-foreground/40" />
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold truncate">{soc.name}</p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <label>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(e) => handleLogoUpload(soc.id, e)}
+                          disabled={uploadingLogoId === soc.id}
+                        />
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          asChild
+                          disabled={uploadingLogoId === soc.id}
+                        >
+                          <span className="cursor-pointer">
+                            {uploadingLogoId === soc.id ? (
+                              <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <ImagePlus className="mr-1 h-3.5 w-3.5" />
+                            )}
+                            {soc.logo_url ? "Changer" : "Importer"}
+                          </span>
+                        </Button>
+                      </label>
+                      {soc.logo_url && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleLogoDelete(soc)}
+                          className="text-destructive hover:text-destructive"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleDeleteSociete(soc)}
+                        className="text-destructive hover:text-destructive"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Upload Card */}
       <Card>
         <CardHeader>
@@ -244,7 +425,26 @@ export default function OrgStructurePage() {
             <strong>Service</strong>
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
+          <div className="flex items-center gap-3">
+            <a href="/template-import-structure.xlsx" download>
+              <Button variant="outline" size="sm">
+                <FileDown className="mr-2 h-4 w-4" />
+                Télécharger le template Excel
+              </Button>
+            </a>
+          </div>
+
+          <div className="flex items-start gap-3 rounded-lg border border-blue-200 bg-blue-50 p-3">
+            <Info className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
+            <p className="text-sm text-blue-800">
+              Seules les colonnes <strong>ID Employé</strong> et <strong>Société</strong> sont
+              obligatoires. Les autres colonnes (Email, Direction, Département, Service,...)
+              sont facultatives. Cependant, moins vous renseignez de données, moins les
+              options de filtrage des résultats seront précises.
+            </p>
+          </div>
+
           <div className="flex items-center gap-4">
             <Input
               type="file"
@@ -291,12 +491,24 @@ export default function OrgStructurePage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-6">
               <div className="text-center">
                 <p className="text-2xl font-bold text-green-700">
                   {summary.employees}
                 </p>
                 <p className="text-sm text-green-600">Employés</p>
+              </div>
+              <div className="text-center">
+                <p className="text-2xl font-bold text-green-700">
+                  {summary.tokens}
+                </p>
+                <p className="text-sm text-green-600">Nouveaux</p>
+              </div>
+              <div className="text-center">
+                <p className="text-2xl font-bold text-green-700">
+                  {summary.tokensUpdated}
+                </p>
+                <p className="text-sm text-green-600">Mis à jour</p>
               </div>
               <div className="text-center">
                 <p className="text-2xl font-bold text-green-700">
@@ -312,15 +524,9 @@ export default function OrgStructurePage() {
               </div>
               <div className="text-center">
                 <p className="text-2xl font-bold text-green-700">
-                  {summary.departments}
+                  {summary.departments + summary.services}
                 </p>
-                <p className="text-sm text-green-600">Départements</p>
-              </div>
-              <div className="text-center">
-                <p className="text-2xl font-bold text-green-700">
-                  {summary.services}
-                </p>
-                <p className="text-sm text-green-600">Services</p>
+                <p className="text-sm text-green-600">Dép./Services</p>
               </div>
             </div>
             {tokenMappings.length > 0 && (

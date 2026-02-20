@@ -291,7 +291,7 @@ export async function POST(request: Request) {
     }
   }
 
-  // Generate anonymous tokens
+  // Generate or update anonymous tokens
   const tokenMappings: Array<{
     email: string;
     nom: string;
@@ -300,10 +300,13 @@ export async function POST(request: Request) {
     direction: string;
     departement: string;
     service: string;
+    updated: boolean;
   }> = [];
 
+  let updatedCount = 0;
+  let createdCount = 0;
+
   for (const emp of employees) {
-    const token = randomUUID();
     const socId = societeIds.get(emp.societe) || null;
     const dirId = directionIds.get(emp.direction) || null;
     const deptId = emp.departement
@@ -311,32 +314,76 @@ export async function POST(request: Request) {
       : null;
     const svcId = emp.service ? serviceIds.get(emp.service) || null : null;
 
-    const { error } = await admin.from("anonymous_tokens").insert({
-      token,
-      email: emp.email,
-      employee_name: emp.nom,
-      societe_id: socId,
-      direction_id: dirId,
-      department_id: deptId,
-      service_id: svcId,
-    });
+    // Check if a token already exists for this email
+    const { data: existingToken } = await admin
+      .from("anonymous_tokens")
+      .select("id, token")
+      .eq("email", emp.email)
+      .single();
 
-    if (error) {
-      return NextResponse.json(
-        { error: `Erreur token pour "${emp.email}": ${error.message}` },
-        { status: 500 }
-      );
+    if (existingToken) {
+      // Update existing token with new org structure
+      const { error } = await admin
+        .from("anonymous_tokens")
+        .update({
+          employee_name: emp.nom,
+          societe_id: socId,
+          direction_id: dirId,
+          department_id: deptId,
+          service_id: svcId,
+        })
+        .eq("id", existingToken.id);
+
+      if (error) {
+        return NextResponse.json(
+          { error: `Erreur mise à jour token pour "${emp.email}": ${error.message}` },
+          { status: 500 }
+        );
+      }
+
+      tokenMappings.push({
+        email: emp.email,
+        nom: emp.nom,
+        token: existingToken.token,
+        societe: emp.societe,
+        direction: emp.direction,
+        departement: emp.departement,
+        service: emp.service,
+        updated: true,
+      });
+      updatedCount++;
+    } else {
+      // Create new token
+      const token = randomUUID();
+      const { error } = await admin.from("anonymous_tokens").insert({
+        token,
+        email: emp.email,
+        employee_name: emp.nom,
+        societe_id: socId,
+        direction_id: dirId,
+        department_id: deptId,
+        service_id: svcId,
+      });
+
+      if (error) {
+        return NextResponse.json(
+          { error: `Erreur token pour "${emp.email}": ${error.message}` },
+          { status: 500 }
+        );
+      }
+
+      tokenMappings.push({
+        email: emp.email,
+        nom: emp.nom,
+        token,
+        societe: emp.societe,
+        direction: emp.direction,
+        departement: emp.departement,
+        service: emp.service,
+        updated: false,
+      });
+      createdCount++;
     }
-
-    tokenMappings.push({
-      email: emp.email,
-      nom: emp.nom,
-      token,
-      societe: emp.societe,
-      direction: emp.direction,
-      departement: emp.departement,
-      service: emp.service,
-    });
   }
 
   return NextResponse.json({
@@ -348,7 +395,8 @@ export async function POST(request: Request) {
       directions: directions.size,
       departments: departments.size,
       services: services.size,
-      tokens: tokenMappings.length,
+      tokens: createdCount,
+      tokensUpdated: updatedCount,
     },
     tokenMappings,
   });

@@ -2,6 +2,7 @@ export type QuestionType =
   | "single_choice"
   | "multiple_choice"
   | "likert"
+  | "likert_5"
   | "free_text";
 
 export type SurveyStatus = "draft" | "published" | "closed";
@@ -20,6 +21,7 @@ export type Survey = {
   wave_group_id: string | null;
   wave_number: number;
   published_at: string | null;
+  closes_at: string | null;
   closed_at: string | null;
   created_at: string;
 };
@@ -59,6 +61,7 @@ export const QUESTION_TYPE_LABELS: Record<QuestionType, string> = {
   single_choice: "Choix unique",
   multiple_choice: "Choix multiple",
   likert: "Échelle de Likert (1-10)",
+  likert_5: "Échelle de Likert (1-5)",
   free_text: "Texte libre",
 };
 

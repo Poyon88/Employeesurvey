@@ -35,6 +35,8 @@ import {
   Send,
   Bell,
   Loader2,
+  MessageSquare,
+  AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
@@ -71,6 +73,14 @@ export default function DistributePage() {
   }>({ total: 0, invited: 0, responded: 0 });
   const [sendingInvitations, setSendingInvitations] = useState(false);
   const [sendingReminders, setSendingReminders] = useState(false);
+  const [teamsConfigured, setTeamsConfigured] = useState<boolean | null>(null);
+  const [teamsStats, setTeamsStats] = useState<{
+    total: number;
+    invited: number;
+    responded: number;
+  }>({ total: 0, invited: 0, responded: 0 });
+  const [sendingTeamsInvitations, setSendingTeamsInvitations] = useState(false);
+  const [sendingTeamsReminders, setSendingTeamsReminders] = useState(false);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -149,6 +159,37 @@ export default function DistributePage() {
       invited: invitedCount,
       responded: count || 0,
     });
+
+    // Load Teams stats
+    let teamsQuery = supabase
+      .from("anonymous_tokens")
+      .select("id, email, teams_invitation_sent_at")
+      .not("email", "is", null);
+
+    if (surveyData?.societe_id) {
+      teamsQuery = teamsQuery.eq("societe_id", surveyData.societe_id);
+    }
+
+    const { data: tokensWithTeams } = await teamsQuery;
+    const withTeams = tokensWithTeams || [];
+    const teamsInvitedCount = withTeams.filter(
+      (t) => t.teams_invitation_sent_at !== null
+    ).length;
+
+    setTeamsStats({
+      total: withTeams.length,
+      invited: teamsInvitedCount,
+      responded: count || 0,
+    });
+
+    // Check Teams configuration
+    try {
+      const teamsRes = await fetch("/api/teams-config");
+      const teamsData = await teamsRes.json();
+      setTeamsConfigured(teamsData.configured);
+    } catch {
+      setTeamsConfigured(false);
+    }
 
     // Generate generic link and QR
     const baseUrl = window.location.origin;
@@ -276,6 +317,64 @@ export default function DistributePage() {
       toast.error("Erreur réseau lors de l'envoi");
     } finally {
       setSendingReminders(false);
+    }
+  }
+
+  async function sendTeamsInvitations() {
+    setSendingTeamsInvitations(true);
+    try {
+      const response = await fetch(`/api/surveys/${surveyId}/send-teams-invitations`, {
+        method: "POST",
+      });
+      const data = await response.json();
+
+      if (response.ok) {
+        if (data.sent > 0) {
+          toast.success(`${data.sent} notification(s) Teams envoyée(s)`);
+        }
+        if (data.failed > 0) {
+          toast.error(`${data.failed} notification(s) Teams échouée(s)`, { duration: 5000 });
+        }
+        if (data.sent === 0 && data.failed === 0) {
+          toast.info(data.message || "Aucune notification à envoyer");
+        }
+        await loadData();
+      } else {
+        toast.error(data.error || "Erreur lors de l'envoi Teams");
+      }
+    } catch {
+      toast.error("Erreur réseau lors de l'envoi Teams");
+    } finally {
+      setSendingTeamsInvitations(false);
+    }
+  }
+
+  async function sendTeamsReminders() {
+    setSendingTeamsReminders(true);
+    try {
+      const response = await fetch(`/api/surveys/${surveyId}/send-teams-reminders`, {
+        method: "POST",
+      });
+      const data = await response.json();
+
+      if (response.ok) {
+        if (data.sent > 0) {
+          toast.success(`${data.sent} rappel(s) Teams envoyé(s)`);
+        }
+        if (data.failed > 0) {
+          toast.error(`${data.failed} rappel(s) Teams échoué(s)`, { duration: 5000 });
+        }
+        if (data.sent === 0 && data.failed === 0) {
+          toast.info(data.message || "Aucun rappel Teams à envoyer");
+        }
+        await loadData();
+      } else {
+        toast.error(data.error || "Erreur lors de l'envoi Teams");
+      }
+    } catch {
+      toast.error("Erreur réseau lors de l'envoi Teams");
+    } finally {
+      setSendingTeamsReminders(false);
     }
   }
 
@@ -520,6 +619,117 @@ export default function DistributePage() {
               Aucun email disponible. Importez d&apos;abord la structure
               organisationnelle avec les emails des employés.
             </p>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Teams Distribution */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <MessageSquare className="h-5 w-5" />
+            Distribution via Microsoft Teams
+          </CardTitle>
+          <CardDescription>
+            Envoyez des notifications directement dans Microsoft Teams.
+            Chaque message contient un lien unique et anonyme.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {teamsConfigured === false && (
+            <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4">
+              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
+              <div className="text-sm text-amber-800">
+                <p className="font-medium">Microsoft Teams non configuré</p>
+                <p className="mt-1">
+                  Pour activer les notifications Teams, un administrateur Azure doit
+                  configurer les variables suivantes dans le fichier{" "}
+                  <code className="rounded bg-amber-100 px-1">.env.local</code> :
+                </p>
+                <ul className="mt-2 list-inside list-disc space-y-1">
+                  <li><code className="rounded bg-amber-100 px-1">AZURE_TENANT_ID</code></li>
+                  <li><code className="rounded bg-amber-100 px-1">AZURE_CLIENT_ID</code></li>
+                  <li><code className="rounded bg-amber-100 px-1">AZURE_CLIENT_SECRET</code></li>
+                </ul>
+              </div>
+            </div>
+          )}
+
+          {teamsConfigured && (
+            <>
+              {/* Teams Stats */}
+              <div className="grid grid-cols-3 gap-4 rounded-lg bg-muted/50 p-4">
+                <div>
+                  <p className="text-xs text-muted-foreground">Destinataires disponibles</p>
+                  <p className="text-2xl font-bold">{teamsStats.total}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Notifications envoyées</p>
+                  <p className="text-2xl font-bold">{teamsStats.invited}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Non-répondants</p>
+                  <p className="text-2xl font-bold">
+                    {Math.max(0, teamsStats.invited - teamsStats.responded)}
+                  </p>
+                </div>
+              </div>
+
+              {/* Teams Actions */}
+              <div className="flex gap-3">
+                <Button
+                  onClick={sendTeamsInvitations}
+                  disabled={
+                    sendingTeamsInvitations ||
+                    teamsStats.total === 0 ||
+                    survey?.status !== "published"
+                  }
+                  className="flex-1"
+                >
+                  {sendingTeamsInvitations ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Envoi en cours...
+                    </>
+                  ) : (
+                    <>
+                      <Send className="mr-2 h-4 w-4" />
+                      Envoyer via Teams
+                    </>
+                  )}
+                </Button>
+
+                <Button
+                  onClick={sendTeamsReminders}
+                  disabled={
+                    sendingTeamsReminders ||
+                    teamsStats.invited === 0 ||
+                    teamsStats.invited <= teamsStats.responded ||
+                    survey?.status !== "published"
+                  }
+                  variant="outline"
+                  className="flex-1"
+                >
+                  {sendingTeamsReminders ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Envoi en cours...
+                    </>
+                  ) : (
+                    <>
+                      <Bell className="mr-2 h-4 w-4" />
+                      Rappels Teams
+                    </>
+                  )}
+                </Button>
+              </div>
+
+              {survey?.status !== "published" && (
+                <p className="text-sm text-amber-600">
+                  Le sondage doit être publié pour envoyer des notifications Teams.
+                </p>
+              )}
+            </>
           )}
         </CardContent>
       </Card>
