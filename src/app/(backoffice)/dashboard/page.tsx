@@ -22,9 +22,20 @@ import {
   CalendarCheck,
   Trash2,
   XCircle,
+  Building2,
 } from "lucide-react";
 import { toast } from "sonner";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
 import Link from "next/link";
+
+type Societe = { id: string; name: string };
 
 type SurveyDashboard = {
   id: string;
@@ -42,6 +53,8 @@ export default function DashboardPage() {
   const supabase = createClient();
   const router = useRouter();
   const [surveys, setSurveys] = useState<SurveyDashboard[]>([]);
+  const [societes, setSocietes] = useState<Societe[]>([]);
+  const [selectedSocieteId, setSelectedSocieteId] = useState<string>("all");
   const [loading, setLoading] = useState(true);
 
   const loadData = useCallback(async () => {
@@ -90,6 +103,15 @@ export default function DashboardPage() {
     }));
 
     setSurveys(enriched);
+
+    // Load societes for filter
+    const { data: socData } = await supabase
+      .from("organizations")
+      .select("id, name")
+      .eq("type", "societe")
+      .order("name");
+    setSocietes(socData || []);
+
     setLoading(false);
   }, [supabase]);
 
@@ -277,17 +299,42 @@ export default function DashboardPage() {
     return diff;
   }
 
-  const active = surveys.filter((s) => s.status === "published");
-  const drafts = surveys.filter((s) => s.status === "draft");
-  const closed = surveys.filter((s) => s.status === "closed");
+  const filtered =
+    selectedSocieteId === "all"
+      ? surveys
+      : surveys.filter((s) => s.societe_id === selectedSocieteId);
+
+  const active = filtered.filter((s) => s.status === "published");
+  const drafts = filtered.filter((s) => s.status === "draft");
+  const closed = filtered.filter((s) => s.status === "closed");
 
   return (
     <div className="space-y-8">
-      <div>
-        <h1 className="text-3xl font-bold">Tableau de bord</h1>
-        <p className="text-muted-foreground">
-          Vue d&apos;ensemble de vos sondages
-        </p>
+      <div className="flex items-end justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold">Tableau de bord</h1>
+          <p className="text-muted-foreground">
+            Vue d&apos;ensemble de vos sondages
+          </p>
+        </div>
+        {societes.length > 1 && (
+          <div className="flex items-center gap-2">
+            <Building2 className="h-4 w-4 text-muted-foreground" />
+            <Select value={selectedSocieteId} onValueChange={setSelectedSocieteId}>
+              <SelectTrigger className="w-[200px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Toutes les sociétés</SelectItem>
+                {societes.map((s) => (
+                  <SelectItem key={s.id} value={s.id}>
+                    {s.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
       </div>
 
       {loading ? (

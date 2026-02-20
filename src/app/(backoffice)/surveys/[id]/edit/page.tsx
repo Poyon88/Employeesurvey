@@ -540,7 +540,7 @@ export default function SurveyEditPage() {
               {isDraft ? "Éditer le sondage" : "Voir le sondage"}
             </h1>
             <Badge variant={isDraft ? "secondary" : "default"}>
-              {isDraft ? "Brouillon" : survey?.status === "published" ? "Publié" : "Clôturé"}
+              {isDraft ? "En préparation" : survey?.status === "published" ? "Publié" : "Clôturé"}
             </Badge>
           </div>
         </div>
@@ -606,6 +606,7 @@ export default function SurveyEditPage() {
               onChange={(e) => setDescFr(e.target.value)}
               rows={2}
               disabled={!isDraft}
+              placeholder={"Cette enquête est anonyme et a pour objectif d'améliorer nos conditions de travail, notre organisation et notre collaboration.\nMerci de répondre avec sincérité."}
             />
           </div>
           <div className="space-y-2">

@@ -22,7 +22,7 @@ type SurveyWithSociete = Survey & {
 };
 
 const STATUS_LABELS: Record<string, string> = {
-  draft: "Brouillon",
+  draft: "En préparation",
   published: "Publié",
   closed: "Clôturé",
 };

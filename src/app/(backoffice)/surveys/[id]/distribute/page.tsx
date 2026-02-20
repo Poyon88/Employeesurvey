@@ -491,7 +491,7 @@ export default function DistributePage() {
         <CardContent className="flex flex-col items-center gap-4">
           {qrSvg && (
             <div
-              className="h-48 w-48 rounded border"
+              className="h-48 w-48 rounded border overflow-hidden [&>svg]:h-full [&>svg]:w-full"
               dangerouslySetInnerHTML={{ __html: qrSvg }}
             />
           )}

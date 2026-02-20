@@ -267,7 +267,7 @@ export default function ImportPage() {
         <Card>
           <CardContent className="py-8 text-center text-muted-foreground">
             L&apos;import IA n&apos;est disponible que pour les sondages en
-            brouillon.
+            préparation.
           </CardContent>
         </Card>
       </div>

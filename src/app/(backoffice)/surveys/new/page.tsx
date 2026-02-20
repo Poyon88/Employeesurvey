@@ -149,7 +149,7 @@ export default function NewSurveyPage() {
                 id="desc_fr"
                 value={descFr}
                 onChange={(e) => setDescFr(e.target.value)}
-                placeholder="Description du sondage..."
+                placeholder={"Cette enquête est anonyme et a pour objectif d'améliorer nos conditions de travail, notre organisation et notre collaboration.\nMerci de répondre avec sincérité."}
                 rows={3}
               />
             </div>

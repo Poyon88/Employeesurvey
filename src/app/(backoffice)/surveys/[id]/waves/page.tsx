@@ -207,7 +207,7 @@ export default function WavesPage() {
                     ? "En cours"
                     : w.status === "closed"
                       ? "Clôturé"
-                      : "Brouillon"}
+                      : "En préparation"}
                 </Badge>
               </div>
               <p className="mt-2 text-sm font-medium">{w.title}</p>
