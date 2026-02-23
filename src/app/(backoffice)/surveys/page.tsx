@@ -48,7 +48,14 @@ export default function SurveysPage() {
     if (error) {
       toast.error("Erreur lors du chargement des sondages");
     } else {
-      setSurveys(data || []);
+      const statusOrder: Record<string, number> = { published: 0, draft: 1, closed: 2 };
+      const sorted = (data || []).sort((a, b) => {
+        const sa = statusOrder[a.status] ?? 9;
+        const sb = statusOrder[b.status] ?? 9;
+        if (sa !== sb) return sa - sb;
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      });
+      setSurveys(sorted);
     }
     setLoading(false);
   }, [supabase]);
