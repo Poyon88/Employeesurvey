@@ -48,6 +48,7 @@ import {
   ChevronDown,
   Trash2,
   FolderOpen,
+  Eye,
 } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
@@ -547,6 +548,12 @@ export default function SurveyEditPage() {
         <div className="flex gap-2">
           {isDraft && (
             <>
+              <Link href={`/s/${surveyId}?preview=1`} target="_blank">
+                <Button variant="outline">
+                  <Eye className="mr-2 h-4 w-4" />
+                  Prévisualiser
+                </Button>
+              </Link>
               <Link href={`/surveys/${surveyId}/import`}>
                 <Button variant="outline">
                   <FileUp className="mr-2 h-4 w-4" />
