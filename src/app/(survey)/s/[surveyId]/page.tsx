@@ -69,6 +69,15 @@ type TranslationData = {
   options: Record<string, { text: string }>;
 } | null;
 
+type BrandingData = {
+  name: string;
+  logo_url: string | null;
+  primary_color: string | null;
+  secondary_color: string | null;
+  accent_color: string | null;
+  font_family: string | null;
+};
+
 type AnswerMap = Record<
   string,
   {
@@ -106,6 +115,7 @@ export default function SurveyRespondentPage() {
   const [lang, setLang] = useState("fr");
   const [translations, setTranslations] = useState<TranslationData>(null);
   const [translating, setTranslating] = useState(false);
+  const [branding, setBranding] = useState<BrandingData | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -131,6 +141,17 @@ export default function SurveyRespondentPage() {
       setSurvey(data.survey);
       setSurveySections(data.sections || []);
       setQuestions(data.questions || []);
+      if (data.branding) {
+        setBranding(data.branding);
+        // Load Google Font if specified
+        if (data.branding.font_family) {
+          const font = data.branding.font_family;
+          const link = document.createElement("link");
+          link.rel = "stylesheet";
+          link.href = `https://fonts.googleapis.com/css2?family=${font.replace(/ /g, "+")}&display=swap`;
+          document.head.appendChild(link);
+        }
+      }
     } catch {
       setError("Erreur réseau");
     }
@@ -344,7 +365,10 @@ export default function SurveyRespondentPage() {
   const progress = (currentStep / (totalSteps - 1)) * 100;
 
   return (
-    <div className="flex min-h-screen flex-col">
+    <div
+      className="flex min-h-screen flex-col"
+      style={{ fontFamily: branding?.font_family ? `"${branding.font_family}", sans-serif` : undefined }}
+    >
       {/* Preview banner */}
       {isPreview && (
         <div className="bg-amber-500 px-4 py-2 text-center text-sm font-medium text-white">
@@ -356,7 +380,16 @@ export default function SurveyRespondentPage() {
       {/* Top bar */}
       <div className="border-b bg-background px-4 py-3">
         <div className="mx-auto flex max-w-2xl items-center justify-between">
-          <span className="text-sm font-medium">PulseSurvey</span>
+          {branding?.logo_url || branding?.name ? (
+            <span className="flex items-center gap-2">
+              {branding.logo_url && (
+                <img src={branding.logo_url} alt={branding.name} className="h-6 w-auto object-contain" />
+              )}
+              <span className="text-sm font-medium">{branding.name}</span>
+            </span>
+          ) : (
+            <span className="text-sm font-medium">PulseSurvey</span>
+          )}
           <Select value={lang} onValueChange={(v) => setLang(v)}>
             <SelectTrigger className="w-auto h-8 gap-2">
               <Globe className="h-4 w-4" />
@@ -376,7 +409,11 @@ export default function SurveyRespondentPage() {
       {/* Progress */}
       <div className="px-4 pt-4">
         <div className="mx-auto max-w-2xl">
-          <Progress value={progress} className="h-2" />
+          <Progress
+            value={progress}
+            className="h-2"
+            indicatorColor={branding?.primary_color ?? undefined}
+          />
           <p className="mt-1 text-xs text-muted-foreground text-right">
             {currentStep}/{totalSteps - 1}
           </p>
@@ -432,6 +469,7 @@ export default function SurveyRespondentPage() {
                         className="w-full"
                         onClick={() => validateToken(token)}
                         disabled={!token.trim() || validatingToken}
+                        style={branding?.primary_color ? { backgroundColor: branding.primary_color } : undefined}
                       >
                         {validatingToken ? (
                           <>
@@ -445,7 +483,10 @@ export default function SurveyRespondentPage() {
                     </div>
                   )}
                   {!isPreview && tokenValidated && (
-                    <p className="text-center text-sm text-green-600">
+                    <p
+                      className="text-center text-sm text-green-600"
+                      style={branding?.accent_color ? { color: branding.accent_color } : undefined}
+                    >
                       {ui("token_validated")}
                     </p>
                   )}
@@ -475,6 +516,7 @@ export default function SurveyRespondentPage() {
                     getQuestionText={getQuestionText}
                     getOptionText={getOptionText}
                     ui={ui}
+                    brandingPrimaryColor={branding?.primary_color ?? undefined}
                   />
                 </div>
               );
@@ -508,6 +550,7 @@ export default function SurveyRespondentPage() {
                         onClick={handleSubmit}
                         disabled={submitting}
                         className="w-full sm:w-auto"
+                        style={branding?.primary_color ? { backgroundColor: branding.primary_color } : undefined}
                       >
                         {submitting ? (
                           <>
@@ -537,6 +580,7 @@ export default function SurveyRespondentPage() {
             variant="outline"
             onClick={() => setCurrentStep((s) => Math.max(0, s - 1))}
             disabled={currentStep === 0 || translating}
+            style={branding?.primary_color ? { borderColor: branding.primary_color, color: branding.primary_color } : undefined}
           >
             <ChevronLeft className="mr-1 h-4 w-4" />
             {ui("previous")}
@@ -545,6 +589,7 @@ export default function SurveyRespondentPage() {
             <Button
               onClick={() => setCurrentStep((s) => s + 1)}
               disabled={!canProceed() || translating}
+              style={branding?.primary_color ? { backgroundColor: branding.primary_color } : undefined}
             >
               {ui("next")}
               <ChevronRight className="ml-1 h-4 w-4" />
@@ -563,6 +608,7 @@ function QuestionView({
   getQuestionText,
   getOptionText,
   ui,
+  brandingPrimaryColor,
 }: {
   question: QuestionData;
   answer: AnswerMap[string];
@@ -570,6 +616,7 @@ function QuestionView({
   getQuestionText: (id: string, fr: string) => string;
   getOptionText: (id: string, fr: string) => string;
   ui: (key: string) => string;
+  brandingPrimaryColor?: string;
 }) {
   return (
     <Card>
@@ -638,20 +685,24 @@ function QuestionView({
               <span>{ui("strongly_agree")}</span>
             </div>
             <div className="grid grid-cols-5 gap-2 sm:grid-cols-10 sm:gap-1">
-              {Array.from({ length: 10 }, (_, i) => i + 1).map((val) => (
-                <button
-                  key={val}
-                  type="button"
-                  onClick={() => onAnswer({ numeric_value: val })}
-                  className={`flex h-11 items-center justify-center rounded-md border text-sm font-medium transition-colors ${
-                    answer.numeric_value === val
-                      ? "border-primary bg-primary text-primary-foreground"
-                      : "hover:bg-muted"
-                  }`}
-                >
-                  {val}
-                </button>
-              ))}
+              {Array.from({ length: 10 }, (_, i) => i + 1).map((val) => {
+                const isSelected = answer.numeric_value === val;
+                return (
+                  <button
+                    key={val}
+                    type="button"
+                    onClick={() => onAnswer({ numeric_value: val })}
+                    className={`flex h-11 items-center justify-center rounded-md border text-sm font-medium transition-colors ${
+                      isSelected
+                        ? brandingPrimaryColor ? "text-white" : "border-primary bg-primary text-primary-foreground"
+                        : "hover:bg-muted"
+                    }`}
+                    style={isSelected && brandingPrimaryColor ? { backgroundColor: brandingPrimaryColor, borderColor: brandingPrimaryColor } : undefined}
+                  >
+                    {val}
+                  </button>
+                );
+              })}
             </div>
             {answer.numeric_value && (
               <p className="text-center text-sm text-muted-foreground">
@@ -668,20 +719,24 @@ function QuestionView({
               <span>{ui("strongly_agree")}</span>
             </div>
             <div className="grid grid-cols-5 gap-2">
-              {Array.from({ length: 5 }, (_, i) => i + 1).map((val) => (
-                <button
-                  key={val}
-                  type="button"
-                  onClick={() => onAnswer({ numeric_value: val })}
-                  className={`flex h-12 items-center justify-center rounded-md border text-base font-medium transition-colors ${
-                    answer.numeric_value === val
-                      ? "border-primary bg-primary text-primary-foreground"
-                      : "hover:bg-muted"
-                  }`}
-                >
-                  {val}
-                </button>
-              ))}
+              {Array.from({ length: 5 }, (_, i) => i + 1).map((val) => {
+                const isSelected = answer.numeric_value === val;
+                return (
+                  <button
+                    key={val}
+                    type="button"
+                    onClick={() => onAnswer({ numeric_value: val })}
+                    className={`flex h-12 items-center justify-center rounded-md border text-base font-medium transition-colors ${
+                      isSelected
+                        ? brandingPrimaryColor ? "text-white" : "border-primary bg-primary text-primary-foreground"
+                        : "hover:bg-muted"
+                    }`}
+                    style={isSelected && brandingPrimaryColor ? { backgroundColor: brandingPrimaryColor, borderColor: brandingPrimaryColor } : undefined}
+                  >
+                    {val}
+                  </button>
+                );
+              })}
             </div>
             {answer.numeric_value && (
               <p className="text-center text-sm text-muted-foreground">

@@ -12,7 +12,7 @@ export async function GET(
   // Load survey
   const { data: survey, error: surveyError } = await supabase
     .from("surveys")
-    .select("id, title_fr, description_fr, introduction_fr, status")
+    .select("id, title_fr, description_fr, introduction_fr, status, societe_id")
     .eq("id", surveyId)
     .single();
 
@@ -38,6 +38,28 @@ export async function GET(
     }
   }
 
+  // Load branding from the linked organization
+  let branding: {
+    name: string;
+    logo_url: string | null;
+    primary_color: string | null;
+    secondary_color: string | null;
+    accent_color: string | null;
+    font_family: string | null;
+  } | null = null;
+
+  if (survey.societe_id) {
+    const { data: org } = await supabase
+      .from("organizations")
+      .select("name, logo_url, primary_color, secondary_color, accent_color, font_family")
+      .eq("id", survey.societe_id)
+      .single();
+
+    if (org) {
+      branding = org;
+    }
+  }
+
   // Load sections
   const { data: sections } = await supabase
     .from("survey_sections")
@@ -56,6 +78,7 @@ export async function GET(
 
   return NextResponse.json({
     survey,
+    branding,
     sections: sections || [],
     questions: (questions || []).map((q) => ({
       ...q,
