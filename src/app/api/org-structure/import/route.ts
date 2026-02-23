@@ -293,11 +293,12 @@ export async function POST(request: Request) {
       : null;
     const svcId = emp.service ? serviceIds.get(emp.service) || null : null;
 
-    // Check if a token already exists for this employee_id
+    // Check if a token already exists for this employee_id in this société
     const { data: existingToken } = await admin
       .from("anonymous_tokens")
       .select("id, token")
       .eq("employee_id", emp.employee_id)
+      .eq("societe_id", societeId)
       .single();
 
     if (existingToken) {
