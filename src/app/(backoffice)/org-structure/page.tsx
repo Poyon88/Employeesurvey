@@ -2,6 +2,7 @@
 
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -37,10 +38,10 @@ import {
   Users,
   AlertCircle,
   CheckCircle,
-  ImagePlus,
   Loader2,
   Trash2,
-  X,
+  Plus,
+  Pencil,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -50,12 +51,15 @@ type OrgUnit = {
   type: "societe" | "direction" | "department" | "service";
   parent_id: string | null;
   logo_url: string | null;
+  primary_color: string | null;
+  secondary_color: string | null;
+  accent_color: string | null;
+  font_family: string | null;
   created_at: string;
 };
 
 type ImportSummary = {
   employees: number;
-  societes: number;
   directions: number;
   departments: number;
   services: number;
@@ -64,19 +68,19 @@ type ImportSummary = {
 };
 
 type TokenMapping = {
+  employee_id: string;
   email: string;
   nom: string;
   token: string;
-  societe: string;
   direction: string;
   departement: string;
   service: string;
 };
 
 const TYPE_LABELS: Record<string, string> = {
-  societe: "Société",
+  societe: "Societe",
   direction: "Direction",
-  department: "Département",
+  department: "Departement",
   service: "Service",
 };
 
@@ -98,7 +102,7 @@ export default function OrgStructurePage() {
   const [summary, setSummary] = useState<ImportSummary | null>(null);
   const [tokenMappings, setTokenMappings] = useState<TokenMapping[]>([]);
   const [selectedSocieteId, setSelectedSocieteId] = useState<string>("all");
-  const [uploadingLogoId, setUploadingLogoId] = useState<string | null>(null);
+  const [importSocieteId, setImportSocieteId] = useState<string>("");
   const supabase = createClient();
 
   const loadOrgs = useCallback(async () => {
@@ -125,6 +129,12 @@ export default function OrgStructurePage() {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    if (!importSocieteId) {
+      toast.error("Veuillez selectionner une societe avant d'importer");
+      e.target.value = "";
+      return;
+    }
+
     const validTypes = [
       "text/csv",
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -134,7 +144,7 @@ export default function OrgStructurePage() {
     const ext = file.name.substring(file.name.lastIndexOf(".")).toLowerCase();
 
     if (!validTypes.includes(file.type) && !validExtensions.includes(ext)) {
-      toast.error("Format non supporté. Utilisez CSV ou Excel (.xlsx).");
+      toast.error("Format non supporte. Utilisez CSV ou Excel (.xlsx).");
       return;
     }
 
@@ -145,6 +155,7 @@ export default function OrgStructurePage() {
 
     const formData = new FormData();
     formData.append("file", file);
+    formData.append("societe_id", importSocieteId);
 
     const res = await fetch("/api/org-structure/import", {
       method: "POST",
@@ -164,8 +175,8 @@ export default function OrgStructurePage() {
       if (data.summary) {
         setSummary(data.summary);
         setTokenMappings(data.tokenMappings || []);
-        toast.success("Import réussi", {
-          description: `${data.summary.employees} employés traités — ${data.summary.tokens} nouveaux tokens, ${data.summary.tokensUpdated} mis à jour`,
+        toast.success("Import reussi", {
+          description: `${data.summary.employees} employes traites — ${data.summary.tokens} nouveaux tokens, ${data.summary.tokensUpdated} mis a jour`,
         });
         loadOrgs();
       }
@@ -179,10 +190,10 @@ export default function OrgStructurePage() {
   function downloadDistributionCSV() {
     if (tokenMappings.length === 0) return;
 
-    const header = "Email,Nom,Token,Société,Direction,Departement,Service";
+    const header = "ID Employe,Email,Nom,Token,Direction,Departement,Service";
     const rows = tokenMappings.map(
       (t) =>
-        `${t.email},${t.nom},${t.token},${t.societe},${t.direction},${t.departement},${t.service}`
+        `${t.employee_id},${t.email},${t.nom},${t.token},${t.direction},${t.departement},${t.service}`
     );
     const csv = [header, ...rows].join("\n");
 
@@ -195,70 +206,15 @@ export default function OrgStructurePage() {
     URL.revokeObjectURL(url);
   }
 
-  async function handleLogoUpload(
-    societeId: string,
-    e: React.ChangeEvent<HTMLInputElement>
-  ) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (!file.type.startsWith("image/")) {
-      toast.error("Veuillez sélectionner une image (PNG, JPG, SVG...)");
-      return;
-    }
-
-    setUploadingLogoId(societeId);
-
-    const formData = new FormData();
-    formData.append("file", file);
-    formData.append("societeId", societeId);
-
-    const res = await fetch("/api/org-structure/logo", {
-      method: "POST",
-      body: formData,
-    });
-
-    const data = await res.json();
-
-    if (!res.ok) {
-      toast.error("Erreur lors de l'upload", {
-        description: data.error || "Une erreur est survenue",
-      });
-    } else {
-      toast.success("Logo importé");
-      loadOrgs();
-    }
-
-    setUploadingLogoId(null);
-    e.target.value = "";
-  }
-
-  async function handleLogoDelete(societe: OrgUnit) {
-    if (!confirm(`Supprimer le logo de "${societe.name}" ?`)) return;
-
-    const res = await fetch("/api/org-structure/logo", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ societeId: societe.id }),
-    });
-
-    if (!res.ok) {
-      toast.error("Erreur lors de la suppression");
-    } else {
-      toast.success("Logo supprimé");
-      loadOrgs();
-    }
-  }
-
   async function handleDeleteSociete(societe: OrgUnit) {
     const confirmed = confirm(
-      `Supprimer la société "${societe.name}" ?\n\n` +
-        `⚠️ ATTENTION : Cette action est irréversible.\n\n` +
-        `Toutes les informations liées à cette société seront définitivement supprimées :\n` +
-        `- Structure organisationnelle (directions, départements, services)\n` +
-        `- Employés et tokens anonymes\n` +
-        `- Sondages associés et leurs réponses\n` +
-        `- Logo de la société`
+      `Supprimer la societe "${societe.name}" ?\n\n` +
+        `ATTENTION : Cette action est irreversible.\n\n` +
+        `Toutes les informations liees a cette societe seront definitivement supprimees :\n` +
+        `- Structure organisationnelle (directions, departements, services)\n` +
+        `- Employes et tokens anonymes\n` +
+        `- Sondages associes et leurs reponses\n` +
+        `- Logo de la societe`
     );
     if (!confirmed) return;
 
@@ -275,11 +231,11 @@ export default function OrgStructurePage() {
           description: data.error || "Une erreur est survenue",
         });
       } else {
-        toast.success(`Société "${societe.name}" supprimée`);
+        toast.success(`Societe "${societe.name}" supprimee`);
         loadOrgs();
       }
     } catch {
-      toast.error("Erreur réseau lors de la suppression");
+      toast.error("Erreur reseau lors de la suppression");
     }
   }
 
@@ -301,7 +257,7 @@ export default function OrgStructurePage() {
         <div>
           <h1 className="text-3xl font-bold">Structure organisationnelle</h1>
           <p className="text-muted-foreground">
-            Importez la structure de votre organisation et générez les tokens
+            Importez la structure de votre organisation et generez les tokens
             anonymes
           </p>
         </div>
@@ -310,13 +266,13 @@ export default function OrgStructurePage() {
       {/* Company filter */}
       {societesList.length > 1 && (
         <div className="flex items-center gap-3">
-          <Label className="text-sm font-medium">Filtrer par société :</Label>
+          <Label className="text-sm font-medium">Filtrer par societe :</Label>
           <Select value={selectedSocieteId} onValueChange={setSelectedSocieteId}>
             <SelectTrigger className="w-[250px]">
-              <SelectValue placeholder="Toutes les sociétés" />
+              <SelectValue placeholder="Toutes les societes" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Toutes les sociétés</SelectItem>
+              <SelectItem value="all">Toutes les societes</SelectItem>
               {societesList.map((s) => (
                 <SelectItem key={s.id} value={s.id}>
                   {s.name}
@@ -327,19 +283,36 @@ export default function OrgStructurePage() {
         </div>
       )}
 
-      {/* Sociétés */}
-      {societesList.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Building2 className="h-5 w-5" />
-              Sociétés
-            </CardTitle>
-            <CardDescription>
-              {filteredSocietes.length} société(s) — importez un logo pour chacune
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
+      {/* Societes */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <Building2 className="h-5 w-5" />
+                Societes
+              </CardTitle>
+              <CardDescription>
+                {societesList.length} societe(s) enregistree(s)
+              </CardDescription>
+            </div>
+            <Link href="/org-structure/societes/new">
+              <Button size="sm">
+                <Plus className="mr-2 h-4 w-4" />
+                Creer une societe
+              </Button>
+            </Link>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {societesList.length === 0 ? (
+            <div className="text-center py-8">
+              <Building2 className="mx-auto h-12 w-12 text-muted-foreground/50" />
+              <p className="mt-2 text-muted-foreground">
+                Aucune societe. Creez-en une pour commencer l&apos;import.
+              </p>
+            </div>
+          ) : (
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {filteredSocietes.map((soc) => (
                 <div
@@ -359,41 +332,42 @@ export default function OrgStructurePage() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="font-semibold truncate">{soc.name}</p>
-                    <div className="flex items-center gap-2 mt-1">
-                      <label>
-                        <input
-                          type="file"
-                          accept="image/*"
-                          className="hidden"
-                          onChange={(e) => handleLogoUpload(soc.id, e)}
-                          disabled={uploadingLogoId === soc.id}
+                    {/* Color swatches + font */}
+                    <div className="flex items-center gap-1.5 mt-1">
+                      {soc.primary_color && (
+                        <div
+                          className="h-4 w-4 rounded-full border"
+                          style={{ backgroundColor: soc.primary_color }}
+                          title={`Primaire: ${soc.primary_color}`}
                         />
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          asChild
-                          disabled={uploadingLogoId === soc.id}
-                        >
-                          <span className="cursor-pointer">
-                            {uploadingLogoId === soc.id ? (
-                              <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
-                            ) : (
-                              <ImagePlus className="mr-1 h-3.5 w-3.5" />
-                            )}
-                            {soc.logo_url ? "Changer" : "Importer"}
-                          </span>
-                        </Button>
-                      </label>
-                      {soc.logo_url && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleLogoDelete(soc)}
-                          className="text-destructive hover:text-destructive"
-                        >
-                          <X className="h-3.5 w-3.5" />
-                        </Button>
                       )}
+                      {soc.secondary_color && (
+                        <div
+                          className="h-4 w-4 rounded-full border"
+                          style={{ backgroundColor: soc.secondary_color }}
+                          title={`Secondaire: ${soc.secondary_color}`}
+                        />
+                      )}
+                      {soc.accent_color && (
+                        <div
+                          className="h-4 w-4 rounded-full border"
+                          style={{ backgroundColor: soc.accent_color }}
+                          title={`Accent: ${soc.accent_color}`}
+                        />
+                      )}
+                      {soc.font_family && (
+                        <span className="text-xs text-muted-foreground ml-1 truncate">
+                          {soc.font_family}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 mt-1">
+                      <Link href={`/org-structure/societes/${soc.id}/edit`}>
+                        <Button variant="outline" size="sm">
+                          <Pencil className="mr-1 h-3.5 w-3.5" />
+                          Modifier
+                        </Button>
+                      </Link>
                       <Button
                         variant="ghost"
                         size="sm"
@@ -407,9 +381,9 @@ export default function OrgStructurePage() {
                 </div>
               ))}
             </div>
-          </CardContent>
-        </Card>
-      )}
+          )}
+        </CardContent>
+      </Card>
 
       {/* Upload Card */}
       <Card>
@@ -419,10 +393,8 @@ export default function OrgStructurePage() {
             Importer un fichier
           </CardTitle>
           <CardDescription>
-            Fichier CSV ou Excel avec les colonnes : <strong>Nom</strong>,{" "}
-            <strong>Email</strong>, <strong>Société</strong>,{" "}
-            <strong>Direction</strong>, <strong>Département</strong>,{" "}
-            <strong>Service</strong>
+            Fichier CSV ou Excel avec la colonne obligatoire : <strong>ID Employe</strong>.
+            Colonnes optionnelles : Nom, Email, Direction, Departement, Service.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -430,7 +402,7 @@ export default function OrgStructurePage() {
             <a href="/template-import-structure.xlsx" download>
               <Button variant="outline" size="sm">
                 <FileDown className="mr-2 h-4 w-4" />
-                Télécharger le template Excel
+                Telecharger le template Excel
               </Button>
             </a>
           </div>
@@ -438,11 +410,27 @@ export default function OrgStructurePage() {
           <div className="flex items-start gap-3 rounded-lg border border-blue-200 bg-blue-50 p-3">
             <Info className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
             <p className="text-sm text-blue-800">
-              Seules les colonnes <strong>ID Employé</strong> et <strong>Société</strong> sont
-              obligatoires. Les autres colonnes (Email, Direction, Département, Service,...)
-              sont facultatives. Cependant, moins vous renseignez de données, moins les
-              options de filtrage des résultats seront précises.
+              Seule la colonne <strong>ID Employe</strong> est obligatoire.
+              Les autres colonnes (Nom, Email, Direction, Departement, Service)
+              sont facultatives. Selectionnez une societe ci-dessous avant d&apos;importer.
             </p>
+          </div>
+
+          {/* Societe selector for import */}
+          <div className="space-y-2">
+            <Label htmlFor="import-societe">Societe *</Label>
+            <Select value={importSocieteId} onValueChange={setImportSocieteId}>
+              <SelectTrigger id="import-societe" className="max-w-md">
+                <SelectValue placeholder="Selectionnez une societe" />
+              </SelectTrigger>
+              <SelectContent>
+                {societesList.map((s) => (
+                  <SelectItem key={s.id} value={s.id}>
+                    {s.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="flex items-center gap-4">
@@ -450,7 +438,7 @@ export default function OrgStructurePage() {
               type="file"
               accept=".csv,.xlsx,.xls"
               onChange={handleFileUpload}
-              disabled={uploading}
+              disabled={uploading || !importSocieteId}
               className="max-w-md"
             />
             {uploading && (
@@ -487,16 +475,16 @@ export default function OrgStructurePage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-green-700">
               <CheckCircle className="h-5 w-5" />
-              Récapitulatif de l&apos;import
+              Recapitulatif de l&apos;import
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-6">
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
               <div className="text-center">
                 <p className="text-2xl font-bold text-green-700">
                   {summary.employees}
                 </p>
-                <p className="text-sm text-green-600">Employés</p>
+                <p className="text-sm text-green-600">Employes</p>
               </div>
               <div className="text-center">
                 <p className="text-2xl font-bold text-green-700">
@@ -508,13 +496,7 @@ export default function OrgStructurePage() {
                 <p className="text-2xl font-bold text-green-700">
                   {summary.tokensUpdated}
                 </p>
-                <p className="text-sm text-green-600">Mis à jour</p>
-              </div>
-              <div className="text-center">
-                <p className="text-2xl font-bold text-green-700">
-                  {summary.societes}
-                </p>
-                <p className="text-sm text-green-600">Sociétés</p>
+                <p className="text-sm text-green-600">Mis a jour</p>
               </div>
               <div className="text-center">
                 <p className="text-2xl font-bold text-green-700">
@@ -526,18 +508,18 @@ export default function OrgStructurePage() {
                 <p className="text-2xl font-bold text-green-700">
                   {summary.departments + summary.services}
                 </p>
-                <p className="text-sm text-green-600">Dép./Services</p>
+                <p className="text-sm text-green-600">Dep./Services</p>
               </div>
             </div>
             {tokenMappings.length > 0 && (
               <div className="mt-4">
                 <Button variant="outline" onClick={downloadDistributionCSV}>
                   <Download className="mr-2 h-4 w-4" />
-                  Télécharger le CSV de distribution (tokens)
+                  Telecharger le CSV de distribution (tokens)
                 </Button>
                 <p className="mt-2 text-xs text-green-600">
-                  Ce fichier contient le mapping email → token. Conservez-le en
-                  lieu sûr, il ne sera pas stocké sur le serveur.
+                  Ce fichier contient le mapping email &rarr; token. Conservez-le en
+                  lieu sur, il ne sera pas stocke sur le serveur.
                 </p>
               </div>
             )}
@@ -553,7 +535,7 @@ export default function OrgStructurePage() {
             Structure actuelle
           </CardTitle>
           <CardDescription>
-            {orgs.length} unité(s) organisationnelle(s)
+            {orgs.length} unite(s) organisationnelle(s)
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -565,7 +547,7 @@ export default function OrgStructurePage() {
             <div className="text-center py-8">
               <Users className="mx-auto h-12 w-12 text-muted-foreground/50" />
               <p className="mt-2 text-muted-foreground">
-                Aucune structure importée. Uploadez un fichier CSV ou Excel.
+                Aucune structure importee. Creez une societe puis uploadez un fichier.
               </p>
             </div>
           ) : (

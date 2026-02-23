@@ -5,9 +5,9 @@ import * as XLSX from "xlsx";
 import { randomUUID } from "crypto";
 
 type EmployeeRow = {
+  employee_id: string;
   nom: string;
   email: string;
-  societe: string;
   direction: string;
   departement: string;
   service: string;
@@ -46,16 +46,17 @@ function parseFile(buffer: ArrayBuffer, filename: string): ParsedData {
 
   for (const h of headers) {
     const n = normalize(h);
-    if (n.includes("nom") || n.includes("name")) headerMap["nom"] = h;
+    if (n.includes("id employe") || n.includes("id_employe") || n.includes("employee id") || n.includes("employee_id") || n.includes("matricule"))
+      headerMap["id_employe"] = h;
+    else if (n.includes("nom") || n.includes("name")) headerMap["nom"] = h;
     else if (n.includes("email") || n.includes("mail")) headerMap["email"] = h;
-    else if (n.includes("societe") || n.includes("company")) headerMap["societe"] = h;
     else if (n.includes("direction")) headerMap["direction"] = h;
     else if (n.includes("departement") || n.includes("department"))
       headerMap["departement"] = h;
     else if (n.includes("service")) headerMap["service"] = h;
   }
 
-  const requiredCols = ["nom", "email", "societe", "direction", "departement", "service"];
+  const requiredCols = ["id_employe"];
   for (const col of requiredCols) {
     if (!headerMap[col]) {
       errors.push(
@@ -74,37 +75,30 @@ function parseFile(buffer: ArrayBuffer, filename: string): ParsedData {
     const row = rows[i];
     const lineNum = i + 2; // +2 for header + 0-index
 
-    const nom = (row[headerMap["nom"]] || "").toString().trim();
-    const email = (row[headerMap["email"]] || "").toString().trim().toLowerCase();
-    const societe = (row[headerMap["societe"]] || "").toString().trim();
-    const direction = (row[headerMap["direction"]] || "").toString().trim();
-    const departement = (row[headerMap["departement"]] || "").toString().trim();
-    const service = (row[headerMap["service"]] || "").toString().trim();
+    const employee_id = (row[headerMap["id_employe"]] || "").toString().trim();
+    const nom = headerMap["nom"] ? (row[headerMap["nom"]] || "").toString().trim() : "";
+    const email = headerMap["email"] ? (row[headerMap["email"]] || "").toString().trim().toLowerCase() : "";
+    const direction = headerMap["direction"] ? (row[headerMap["direction"]] || "").toString().trim() : "";
+    const departement = headerMap["departement"] ? (row[headerMap["departement"]] || "").toString().trim() : "";
+    const service = headerMap["service"] ? (row[headerMap["service"]] || "").toString().trim() : "";
 
-    if (!nom) {
-      errors.push(`Ligne ${lineNum}: nom manquant`);
+    if (!employee_id) {
+      errors.push(`Ligne ${lineNum}: ID employé manquant`);
       continue;
     }
-    if (!email || !email.includes("@")) {
+
+    if (email && !email.includes("@")) {
       errors.push(`Ligne ${lineNum}: email invalide "${email}"`);
       continue;
     }
-    if (!societe) {
-      errors.push(`Ligne ${lineNum}: société manquante`);
-      continue;
-    }
-    if (!direction) {
-      errors.push(`Ligne ${lineNum}: direction manquante`);
-      continue;
-    }
 
-    if (seenEmails.has(email)) {
-      errors.push(`Ligne ${lineNum}: email en doublon "${email}"`);
+    if (seenEmails.has(employee_id)) {
+      errors.push(`Ligne ${lineNum}: ID employé en doublon "${employee_id}"`);
       continue;
     }
-    seenEmails.add(email);
+    seenEmails.add(employee_id);
 
-    employees.push({ nom, email, societe, direction, departement, service });
+    employees.push({ employee_id, nom, email, direction, departement, service });
   }
 
   return { employees, errors };
@@ -134,9 +128,29 @@ export async function POST(request: Request) {
   // Parse uploaded file
   const formData = await request.formData();
   const file = formData.get("file") as File | null;
+  const societeId = formData.get("societe_id") as string | null;
 
   if (!file) {
     return NextResponse.json({ error: "Aucun fichier fourni" }, { status: 400 });
+  }
+
+  if (!societeId) {
+    return NextResponse.json({ error: "Veuillez sélectionner une société" }, { status: 400 });
+  }
+
+  // Use admin client for inserts (bypasses RLS)
+  const admin = createAdminClient();
+
+  // Validate that the société exists
+  const { data: societe } = await admin
+    .from("organizations")
+    .select("id")
+    .eq("id", societeId)
+    .eq("type", "societe")
+    .single();
+
+  if (!societe) {
+    return NextResponse.json({ error: "Société introuvable" }, { status: 404 });
   }
 
   const buffer = await file.arrayBuffer();
@@ -146,19 +160,16 @@ export async function POST(request: Request) {
     return NextResponse.json({ errors, employees: [] }, { status: 400 });
   }
 
-  // Use admin client for inserts (bypasses RLS)
-  const admin = createAdminClient();
-
   // Build unique org units
-  const societes = new Set<string>();
-  const directions = new Map<string, string>(); // direction -> societe
+  const directions = new Map<string, true>();
   const departments = new Map<string, string>(); // dept -> direction
   const services = new Map<string, string>(); // service -> dept
 
   for (const emp of employees) {
-    societes.add(emp.societe);
-    directions.set(emp.direction, emp.societe);
-    if (emp.departement) {
+    if (emp.direction) {
+      directions.set(emp.direction, true);
+    }
+    if (emp.departement && emp.direction) {
       departments.set(emp.departement, emp.direction);
     }
     if (emp.service && emp.departement) {
@@ -166,46 +177,15 @@ export async function POST(request: Request) {
     }
   }
 
-  // Insert societes
-  const societeIds = new Map<string, string>();
-  for (const socName of societes) {
-    const { data: existing } = await admin
-      .from("organizations")
-      .select("id")
-      .eq("name", socName)
-      .eq("type", "societe")
-      .single();
-
-    if (existing) {
-      societeIds.set(socName, existing.id);
-    } else {
-      const { data: inserted, error } = await admin
-        .from("organizations")
-        .insert({ name: socName, type: "societe", parent_id: null })
-        .select("id")
-        .single();
-
-      if (error) {
-        return NextResponse.json(
-          { error: `Erreur création société "${socName}": ${error.message}` },
-          { status: 500 }
-        );
-      }
-      societeIds.set(socName, inserted.id);
-    }
-  }
-
-  // Insert directions
+  // Insert directions under the selected société
   const directionIds = new Map<string, string>();
-  for (const [dirName, socName] of directions) {
-    const parentId = societeIds.get(socName)!;
-
+  for (const dirName of directions.keys()) {
     const { data: existing } = await admin
       .from("organizations")
       .select("id")
       .eq("name", dirName)
       .eq("type", "direction")
-      .eq("parent_id", parentId)
+      .eq("parent_id", societeId)
       .single();
 
     if (existing) {
@@ -213,7 +193,7 @@ export async function POST(request: Request) {
     } else {
       const { data: inserted, error } = await admin
         .from("organizations")
-        .insert({ name: dirName, type: "direction", parent_id: parentId })
+        .insert({ name: dirName, type: "direction", parent_id: societeId })
         .select("id")
         .single();
 
@@ -293,10 +273,10 @@ export async function POST(request: Request) {
 
   // Generate or update anonymous tokens
   const tokenMappings: Array<{
+    employee_id: string;
     email: string;
     nom: string;
     token: string;
-    societe: string;
     direction: string;
     departement: string;
     service: string;
@@ -307,18 +287,17 @@ export async function POST(request: Request) {
   let createdCount = 0;
 
   for (const emp of employees) {
-    const socId = societeIds.get(emp.societe) || null;
-    const dirId = directionIds.get(emp.direction) || null;
+    const dirId = emp.direction ? directionIds.get(emp.direction) || null : null;
     const deptId = emp.departement
       ? departmentIds.get(emp.departement) || null
       : null;
     const svcId = emp.service ? serviceIds.get(emp.service) || null : null;
 
-    // Check if a token already exists for this email
+    // Check if a token already exists for this employee_id
     const { data: existingToken } = await admin
       .from("anonymous_tokens")
       .select("id, token")
-      .eq("email", emp.email)
+      .eq("employee_id", emp.employee_id)
       .single();
 
     if (existingToken) {
@@ -326,8 +305,9 @@ export async function POST(request: Request) {
       const { error } = await admin
         .from("anonymous_tokens")
         .update({
-          employee_name: emp.nom,
-          societe_id: socId,
+          employee_name: emp.nom || null,
+          email: emp.email || null,
+          societe_id: societeId,
           direction_id: dirId,
           department_id: deptId,
           service_id: svcId,
@@ -336,16 +316,16 @@ export async function POST(request: Request) {
 
       if (error) {
         return NextResponse.json(
-          { error: `Erreur mise à jour token pour "${emp.email}": ${error.message}` },
+          { error: `Erreur mise à jour token pour "${emp.employee_id}": ${error.message}` },
           { status: 500 }
         );
       }
 
       tokenMappings.push({
+        employee_id: emp.employee_id,
         email: emp.email,
         nom: emp.nom,
         token: existingToken.token,
-        societe: emp.societe,
         direction: emp.direction,
         departement: emp.departement,
         service: emp.service,
@@ -357,9 +337,10 @@ export async function POST(request: Request) {
       const token = randomUUID();
       const { error } = await admin.from("anonymous_tokens").insert({
         token,
-        email: emp.email,
-        employee_name: emp.nom,
-        societe_id: socId,
+        employee_id: emp.employee_id,
+        email: emp.email || null,
+        employee_name: emp.nom || null,
+        societe_id: societeId,
         direction_id: dirId,
         department_id: deptId,
         service_id: svcId,
@@ -367,16 +348,16 @@ export async function POST(request: Request) {
 
       if (error) {
         return NextResponse.json(
-          { error: `Erreur token pour "${emp.email}": ${error.message}` },
+          { error: `Erreur token pour "${emp.employee_id}": ${error.message}` },
           { status: 500 }
         );
       }
 
       tokenMappings.push({
+        employee_id: emp.employee_id,
         email: emp.email,
         nom: emp.nom,
         token,
-        societe: emp.societe,
         direction: emp.direction,
         departement: emp.departement,
         service: emp.service,
@@ -391,7 +372,6 @@ export async function POST(request: Request) {
     errors,
     summary: {
       employees: employees.length,
-      societes: societes.size,
       directions: directions.size,
       departments: departments.size,
       services: services.size,
