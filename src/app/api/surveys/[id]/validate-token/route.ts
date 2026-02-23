@@ -15,11 +15,12 @@ export async function POST(
     return NextResponse.json({ valid: false }, { status: 400 });
   }
 
-  // Check that the token exists and belongs to a société linked to this survey
+  // Check that the token exists, is active, and belongs to a société linked to this survey
   const { data: tokenData } = await supabase
     .from("anonymous_tokens")
     .select("id, societe_id")
     .eq("token", token.trim())
+    .eq("active", true)
     .single();
 
   if (!tokenData) {

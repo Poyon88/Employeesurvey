@@ -78,12 +78,21 @@ type AnswerMap = Record<
   }
 >;
 
+// Strip invisible chars from spreadsheet copy-paste (nbsp, zero-width, quotes, newlines)
+function sanitizeToken(raw: string): string {
+  return raw
+    .replace(/[\u00A0\u200B\u200C\u200D\uFEFF\u2028\u2029]/g, "")
+    .replace(/["\u201C\u201D\u2018\u2019']/g, "")
+    .replace(/[\r\n\t]/g, "")
+    .trim();
+}
+
 export default function SurveyRespondentPage() {
   const params = useParams();
   const searchParams = useSearchParams();
   const router = useRouter();
   const surveyId = params.surveyId as string;
-  const tokenParam = searchParams.get("t") || "";
+  const tokenParam = sanitizeToken(searchParams.get("t") || "");
   const isPreview = searchParams.get("preview") === "1";
 
   const [token, setToken] = useState(tokenParam);
@@ -415,7 +424,7 @@ export default function SurveyRespondentPage() {
                       <Label>{ui("enter_token")}</Label>
                       <Input
                         value={token}
-                        onChange={(e) => setToken(e.target.value)}
+                        onChange={(e) => setToken(sanitizeToken(e.target.value))}
                         placeholder={ui("paste_token")}
                         className="font-mono"
                       />

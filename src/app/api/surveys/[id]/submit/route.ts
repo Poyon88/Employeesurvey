@@ -34,11 +34,12 @@ export async function POST(
       );
     }
 
-    // Validate token
+    // Validate token (must be active)
     const { data: tokenData, error: tokenError } = await supabase
       .from("anonymous_tokens")
       .select("id, societe_id, direction_id, department_id, service_id")
-      .eq("token", token)
+      .eq("token", token.trim())
+      .eq("active", true)
       .single();
 
     if (tokenError || !tokenData) {
