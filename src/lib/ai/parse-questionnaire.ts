@@ -57,7 +57,6 @@ export async function parseQuestionnaire(
   documentText: string
 ): Promise<ParseResult> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
-  console.log("[DEBUG] ANTHROPIC_API_KEY present:", !!apiKey, "starts with:", apiKey?.substring(0, 12), "length:", apiKey?.length);
   if (!apiKey || apiKey === "your_anthropic_api_key_here") {
     throw new Error(
       "ANTHROPIC_API_KEY non configurée. Ajoutez votre clé API Anthropic dans .env.local"
