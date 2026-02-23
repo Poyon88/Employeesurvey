@@ -59,10 +59,11 @@ export async function POST(
     );
   }
 
-  // Get tokens with emails that haven't been invited via Teams yet
+  // Get active tokens with emails that haven't been invited via Teams yet
   let tokensQuery = admin
     .from("anonymous_tokens")
     .select("id, token, email, employee_name")
+    .eq("active", true)
     .not("email", "is", null)
     .is("teams_invitation_sent_at", null);
 

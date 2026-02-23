@@ -37,6 +37,8 @@ import {
   Loader2,
   MessageSquare,
   AlertTriangle,
+  RefreshCw,
+  CheckCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
@@ -81,6 +83,15 @@ export default function DistributePage() {
   }>({ total: 0, invited: 0, responded: 0 });
   const [sendingTeamsInvitations, setSendingTeamsInvitations] = useState(false);
   const [sendingTeamsReminders, setSendingTeamsReminders] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState<{
+    totalTokens: number;
+    newForEmail: number;
+    newForTeams: number;
+    totalWithEmail: number;
+    totalResponses: number;
+    societeName: string | null;
+  } | null>(null);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -94,12 +105,13 @@ export default function DistributePage() {
 
     if (surveyData) setSurvey(surveyData);
 
-    // Load tokens with org names (filtered by survey's company)
+    // Load active tokens with org names (filtered by survey's company)
     let tokensQuery = supabase
       .from("anonymous_tokens")
       .select(
         "id, token, societe_id, direction_id, department_id, service_id"
-      );
+      )
+      .eq("active", true);
 
     if (surveyData?.societe_id) {
       tokensQuery = tokensQuery.eq("societe_id", surveyData.societe_id);
@@ -137,10 +149,11 @@ export default function DistributePage() {
 
     setResponseCount(count || 0);
 
-    // Load email stats (filtered by survey's company)
+    // Load email stats (filtered by survey's company, active only)
     let emailQuery = supabase
       .from("anonymous_tokens")
       .select("id, email, invitation_sent_at")
+      .eq("active", true)
       .not("email", "is", null);
 
     if (surveyData?.societe_id) {
@@ -160,10 +173,11 @@ export default function DistributePage() {
       responded: count || 0,
     });
 
-    // Load Teams stats
+    // Load Teams stats (active only)
     let teamsQuery = supabase
       .from("anonymous_tokens")
       .select("id, email, teams_invitation_sent_at")
+      .eq("active", true)
       .not("email", "is", null);
 
     if (surveyData?.societe_id) {
@@ -378,6 +392,73 @@ export default function DistributePage() {
     }
   }
 
+  async function syncFromStructure() {
+    setSyncing(true);
+    const prevTokenCount = tokens.length;
+
+    // Fetch survey fresh from DB to get current societe_id
+    const { data: freshSurvey } = await supabase
+      .from("surveys")
+      .select("societe_id")
+      .eq("id", surveyId)
+      .single();
+
+    const societeId = freshSurvey?.societe_id || null;
+
+    // Resolve société name for display
+    let societeName: string | null = null;
+    if (societeId) {
+      const { data: org } = await supabase
+        .from("organizations")
+        .select("name")
+        .eq("id", societeId)
+        .single();
+      societeName = org?.name || null;
+    }
+
+    // Fetch all active tokens filtered by survey's company
+    let tokensQuery = supabase
+      .from("anonymous_tokens")
+      .select("id, email, invitation_sent_at, teams_invitation_sent_at, societe_id")
+      .eq("active", true);
+
+    if (societeId) {
+      tokensQuery = tokensQuery.eq("societe_id", societeId);
+    }
+
+    const { data: allTokens } = await tokensQuery;
+    const tokensList = allTokens || [];
+
+    const withEmail = tokensList.filter((t) => t.email);
+    const newForEmail = withEmail.filter((t) => !t.invitation_sent_at).length;
+    const newForTeams = withEmail.filter((t) => !t.teams_invitation_sent_at).length;
+
+    const { count } = await supabase
+      .from("responses")
+      .select("id", { count: "exact", head: true })
+      .eq("survey_id", surveyId);
+
+    setSyncResult({
+      totalTokens: tokensList.length,
+      newForEmail,
+      newForTeams,
+      totalWithEmail: withEmail.length,
+      totalResponses: count || 0,
+      societeName,
+    });
+
+    const newTokens = tokensList.length - prevTokenCount;
+    if (newTokens > 0) {
+      toast.success(`Distribution mise à jour : ${newTokens} nouveau(x) employé(s) détecté(s)`);
+    } else {
+      toast.success("Distribution synchronisée avec la structure actuelle");
+    }
+
+    // Reload all page data to update stats everywhere
+    await loadData();
+    setSyncing(false);
+  }
+
   function getIframeCode() {
     return `<iframe src="${genericLink}" width="100%" height="700" frameborder="0" style="border: 1px solid #e5e7eb; border-radius: 8px;"></iframe>`;
   }
@@ -449,6 +530,95 @@ export default function DistributePage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Sync from Structure */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <RefreshCw className="h-5 w-5" />
+            Synchronisation avec la structure employé
+          </CardTitle>
+          <CardDescription>
+            Mettez à jour les canaux de distribution en fonction de la dernière
+            structure organisationnelle importée.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <Button onClick={syncFromStructure} disabled={syncing}>
+            {syncing ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Synchronisation...
+              </>
+            ) : (
+              <>
+                <RefreshCw className="mr-2 h-4 w-4" />
+                Rafraîchir depuis la structure
+              </>
+            )}
+          </Button>
+
+          {syncResult && (
+            <div className="space-y-3 rounded-lg border border-green-200 bg-green-50 p-4">
+              <div className="flex items-center gap-2 text-green-700">
+                <CheckCircle className="h-4 w-4" />
+                <span className="text-sm font-medium">
+                  Distribution synchronisée
+                  {syncResult.societeName && (
+                    <span className="font-normal text-muted-foreground">
+                      {" "}— filtrée sur {syncResult.societeName}
+                    </span>
+                  )}
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <div>
+                  <p className="text-xs text-muted-foreground">Total employés</p>
+                  <p className="text-lg font-bold">{syncResult.totalTokens}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Avec email</p>
+                  <p className="text-lg font-bold">{syncResult.totalWithEmail}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">
+                    <Mail className="mr-1 inline h-3 w-3" />
+                    Non invités (email)
+                  </p>
+                  <p className="text-lg font-bold text-blue-600">{syncResult.newForEmail}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">
+                    <MessageSquare className="mr-1 inline h-3 w-3" />
+                    Non notifiés (Teams)
+                  </p>
+                  <p className="text-lg font-bold text-purple-600">{syncResult.newForTeams}</p>
+                </div>
+              </div>
+              {syncResult.newForEmail > 0 && (
+                <p className="text-sm text-green-700">
+                  {syncResult.newForEmail} employé(s) peuvent recevoir une invitation par email.
+                </p>
+              )}
+              {syncResult.newForTeams > 0 && (
+                <p className="text-sm text-purple-700">
+                  {syncResult.newForTeams} employé(s) peuvent recevoir une notification Teams.
+                </p>
+              )}
+              {syncResult.newForEmail === 0 && syncResult.newForTeams === 0 && syncResult.totalWithEmail > 0 && (
+                <p className="text-sm text-muted-foreground">
+                  Tous les employés avec email ont déjà été contactés.
+                </p>
+              )}
+              {syncResult.totalWithEmail === 0 && (
+                <p className="text-sm text-amber-600">
+                  Aucun employé avec email. Importez la structure avec des adresses email pour activer la distribution par email et Teams.
+                </p>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Link */}
       <Card>

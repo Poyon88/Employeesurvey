@@ -301,7 +301,7 @@ export async function POST(request: Request) {
       .single();
 
     if (existingToken) {
-      // Update existing token with new org structure
+      // Update existing token with new org structure + reactivate
       const { error } = await admin
         .from("anonymous_tokens")
         .update({
@@ -311,6 +311,7 @@ export async function POST(request: Request) {
           direction_id: dirId,
           department_id: deptId,
           service_id: svcId,
+          active: true,
         })
         .eq("id", existingToken.id);
 
@@ -367,6 +368,30 @@ export async function POST(request: Request) {
     }
   }
 
+  // Deactivate tokens for employees absent from the file (same société)
+  const importedEmployeeIds = employees.map((e) => e.employee_id);
+  const { data: allSocieteTokens } = await admin
+    .from("anonymous_tokens")
+    .select("id, employee_id")
+    .eq("societe_id", societeId)
+    .eq("active", true);
+
+  const tokensToDeactivate = (allSocieteTokens || [])
+    .filter((t) => t.employee_id && !importedEmployeeIds.includes(t.employee_id))
+    .map((t) => t.id);
+
+  let deactivatedCount = 0;
+  if (tokensToDeactivate.length > 0) {
+    const { error: deactivateError } = await admin
+      .from("anonymous_tokens")
+      .update({ active: false })
+      .in("id", tokensToDeactivate);
+
+    if (!deactivateError) {
+      deactivatedCount = tokensToDeactivate.length;
+    }
+  }
+
   return NextResponse.json({
     success: true,
     errors,
@@ -377,6 +402,7 @@ export async function POST(request: Request) {
       services: services.size,
       tokens: createdCount,
       tokensUpdated: updatedCount,
+      tokensDeactivated: deactivatedCount,
     },
     tokenMappings,
   });

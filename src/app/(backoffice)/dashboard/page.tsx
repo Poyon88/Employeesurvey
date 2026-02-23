@@ -81,10 +81,11 @@ export default function DashboardPage() {
       responseMap.set(r.survey_id, (responseMap.get(r.survey_id) || 0) + 1);
     }
 
-    // Load token counts per societe
+    // Load token counts per societe (active only)
     const { data: tokens } = await supabase
       .from("anonymous_tokens")
-      .select("societe_id");
+      .select("societe_id")
+      .eq("active", true);
 
     const tokenMap = new Map<string, number>();
     let totalTokens = 0;

@@ -65,6 +65,7 @@ type ImportSummary = {
   services: number;
   tokens: number;
   tokensUpdated: number;
+  tokensDeactivated: number;
 };
 
 type TokenMapping = {
@@ -479,7 +480,7 @@ export default function OrgStructurePage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-6">
               <div className="text-center">
                 <p className="text-2xl font-bold text-green-700">
                   {summary.employees}
@@ -497,6 +498,12 @@ export default function OrgStructurePage() {
                   {summary.tokensUpdated}
                 </p>
                 <p className="text-sm text-green-600">Mis a jour</p>
+              </div>
+              <div className="text-center">
+                <p className="text-2xl font-bold text-orange-600">
+                  {summary.tokensDeactivated}
+                </p>
+                <p className="text-sm text-orange-500">Desactives</p>
               </div>
               <div className="text-center">
                 <p className="text-2xl font-bold text-green-700">

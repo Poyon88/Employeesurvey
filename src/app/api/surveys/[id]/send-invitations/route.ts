@@ -52,10 +52,11 @@ export async function POST(
     );
   }
 
-  // Get tokens with emails that haven't been invited yet (filtered by survey's company)
+  // Get active tokens with emails that haven't been invited yet (filtered by survey's company)
   let tokensQuery = admin
     .from("anonymous_tokens")
     .select("id, token, email, employee_name")
+    .eq("active", true)
     .not("email", "is", null)
     .is("invitation_sent_at", null);
 
