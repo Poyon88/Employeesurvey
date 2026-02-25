@@ -23,6 +23,7 @@ import {
   Trash2,
   XCircle,
   Building2,
+  BarChart3,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -558,6 +559,12 @@ export default function DashboardPage() {
                           <Progress value={rate ?? 0} className="h-2" />
                         </div>
                         <div className="flex justify-end gap-1 pt-1">
+                          <Link href={`/surveys/${s.id}/results`}>
+                            <Button variant="ghost" size="sm">
+                              <BarChart3 className="mr-1 h-3.5 w-3.5" />
+                              Résultats
+                            </Button>
+                          </Link>
                           <Button
                             variant="ghost"
                             size="sm"

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -20,7 +20,6 @@ import {
 } from "@/components/ui/select";
 import { ArrowLeft, Users, ShieldAlert, BarChart3 } from "lucide-react";
 import { toast } from "sonner";
-import Link from "next/link";
 import {
   BarChart,
   Bar,
@@ -98,6 +97,7 @@ type ResultsData = {
 
 export default function ResultsPage() {
   const params = useParams();
+  const router = useRouter();
   const surveyId = params.id as string;
 
   const [data, setData] = useState<ResultsData | null>(null);
@@ -161,11 +161,9 @@ export default function ResultsPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <Link href={`/surveys/${surveyId}/edit`}>
-            <Button variant="ghost" size="icon">
-              <ArrowLeft className="h-4 w-4" />
-            </Button>
-          </Link>
+          <Button variant="ghost" size="icon" onClick={() => router.back()}>
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
           <div>
             <h1 className="text-2xl font-bold">Résultats</h1>
             <p className="text-sm text-muted-foreground">
