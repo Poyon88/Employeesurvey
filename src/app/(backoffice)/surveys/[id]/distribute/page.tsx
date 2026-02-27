@@ -62,7 +62,10 @@ export default function DistributePage() {
     title_fr: string;
     status: string;
     societe_id: string | null;
+    survey_type: string;
+    filters: Record<string, unknown>;
   } | null>(null);
+  const [hasSurveyTokens, setHasSurveyTokens] = useState(false);
   const [tokens, setTokens] = useState<TokenInfo[]>([]);
   const [responseCount, setResponseCount] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -84,6 +87,7 @@ export default function DistributePage() {
   const [sendingTeamsInvitations, setSendingTeamsInvitations] = useState(false);
   const [sendingTeamsReminders, setSendingTeamsReminders] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
   const [syncResult, setSyncResult] = useState<{
     totalTokens: number;
     newForEmail: number;
@@ -99,46 +103,75 @@ export default function DistributePage() {
     // Load survey
     const { data: surveyData } = await supabase
       .from("surveys")
-      .select("title_fr, status, societe_id")
+      .select("title_fr, status, societe_id, survey_type, filters")
       .eq("id", surveyId)
       .single();
 
     if (surveyData) setSurvey(surveyData);
 
-    // Load active tokens with org names (filtered by survey's company)
-    let tokensQuery = supabase
-      .from("anonymous_tokens")
-      .select(
-        "id, token, societe_id, direction_id, department_id, service_id"
-      )
-      .eq("active", true);
+    // Check if survey_tokens exist for this survey
+    const { count: stCount } = await supabase
+      .from("survey_tokens")
+      .select("id", { count: "exact", head: true })
+      .eq("survey_id", surveyId);
 
-    if (surveyData?.societe_id) {
-      tokensQuery = tokensQuery.eq("societe_id", surveyData.societe_id);
-    }
+    const useSurveyTokens = (stCount ?? 0) > 0;
+    setHasSurveyTokens(useSurveyTokens);
 
-    const { data: tokensData } = await tokensQuery;
+    if (useSurveyTokens) {
+      // Load tokens via survey_tokens
+      const { data: stData } = await supabase
+        .from("survey_tokens")
+        .select("token_id, invitation_sent_at, teams_invitation_sent_at, anonymous_tokens!inner(id, token, societe_id, direction_id, department_id, service_id)")
+        .eq("survey_id", surveyId);
 
-    if (tokensData && tokensData.length > 0) {
-      // Load organizations for name resolution
-      const { data: orgs } = await supabase
-        .from("organizations")
-        .select("id, name");
+      if (stData && stData.length > 0) {
+        const { data: orgs } = await supabase
+          .from("organizations")
+          .select("id, name");
+        const orgMap = new Map((orgs || []).map((o) => [o.id, o.name]));
 
-      const orgMap = new Map(
-        (orgs || []).map((o) => [o.id, o.name])
-      );
+        setTokens(
+          stData.map((st: any) => ({
+            id: st.anonymous_tokens.id,
+            token: st.anonymous_tokens.token,
+            societe_name: st.anonymous_tokens.societe_id ? orgMap.get(st.anonymous_tokens.societe_id) || null : null,
+            direction_name: st.anonymous_tokens.direction_id ? orgMap.get(st.anonymous_tokens.direction_id) || null : null,
+            department_name: st.anonymous_tokens.department_id ? orgMap.get(st.anonymous_tokens.department_id) || null : null,
+            service_name: st.anonymous_tokens.service_id ? orgMap.get(st.anonymous_tokens.service_id) || null : null,
+          }))
+        );
+      }
+    } else {
+      // Legacy: load tokens by societe_id
+      let tokensQuery = supabase
+        .from("anonymous_tokens")
+        .select("id, token, societe_id, direction_id, department_id, service_id")
+        .eq("active", true);
 
-      setTokens(
-        tokensData.map((t) => ({
-          id: t.id,
-          token: t.token,
-          societe_name: t.societe_id ? orgMap.get(t.societe_id) || null : null,
-          direction_name: t.direction_id ? orgMap.get(t.direction_id) || null : null,
-          department_name: t.department_id ? orgMap.get(t.department_id) || null : null,
-          service_name: t.service_id ? orgMap.get(t.service_id) || null : null,
-        }))
-      );
+      if (surveyData?.societe_id) {
+        tokensQuery = tokensQuery.eq("societe_id", surveyData.societe_id);
+      }
+
+      const { data: tokensData } = await tokensQuery;
+
+      if (tokensData && tokensData.length > 0) {
+        const { data: orgs } = await supabase
+          .from("organizations")
+          .select("id, name");
+        const orgMap = new Map((orgs || []).map((o) => [o.id, o.name]));
+
+        setTokens(
+          tokensData.map((t) => ({
+            id: t.id,
+            token: t.token,
+            societe_name: t.societe_id ? orgMap.get(t.societe_id) || null : null,
+            direction_name: t.direction_id ? orgMap.get(t.direction_id) || null : null,
+            department_name: t.department_id ? orgMap.get(t.department_id) || null : null,
+            service_name: t.service_id ? orgMap.get(t.service_id) || null : null,
+          }))
+        );
+      }
     }
 
     // Count responses
@@ -149,52 +182,84 @@ export default function DistributePage() {
 
     setResponseCount(count || 0);
 
-    // Load email stats (filtered by survey's company, active only)
-    let emailQuery = supabase
-      .from("anonymous_tokens")
-      .select("id, email, invitation_sent_at")
-      .eq("active", true)
-      .not("email", "is", null);
+    if (useSurveyTokens) {
+      // Email stats from survey_tokens
+      const { data: stEmailData } = await supabase
+        .from("survey_tokens")
+        .select("invitation_sent_at, anonymous_tokens!inner(id, email)")
+        .eq("survey_id", surveyId);
 
-    if (surveyData?.societe_id) {
-      emailQuery = emailQuery.eq("societe_id", surveyData.societe_id);
+      const withEmail = (stEmailData || []).filter((st: any) => st.anonymous_tokens?.email);
+      const invitedCount = withEmail.filter((st: any) => st.invitation_sent_at !== null).length;
+
+      setEmailStats({
+        total: withEmail.length,
+        invited: invitedCount,
+        responded: count || 0,
+      });
+
+      // Teams stats from survey_tokens
+      const { data: stTeamsData } = await supabase
+        .from("survey_tokens")
+        .select("teams_invitation_sent_at, anonymous_tokens!inner(id, email)")
+        .eq("survey_id", surveyId);
+
+      const withTeamsEmail = (stTeamsData || []).filter((st: any) => st.anonymous_tokens?.email);
+      const teamsInvitedCount = withTeamsEmail.filter((st: any) => st.teams_invitation_sent_at !== null).length;
+
+      setTeamsStats({
+        total: withTeamsEmail.length,
+        invited: teamsInvitedCount,
+        responded: count || 0,
+      });
+    } else {
+      // Legacy email stats
+      let emailQuery = supabase
+        .from("anonymous_tokens")
+        .select("id, email, invitation_sent_at")
+        .eq("active", true)
+        .not("email", "is", null);
+
+      if (surveyData?.societe_id) {
+        emailQuery = emailQuery.eq("societe_id", surveyData.societe_id);
+      }
+
+      const { data: tokensWithEmail } = await emailQuery;
+
+      const withEmail = tokensWithEmail || [];
+      const invitedCount = withEmail.filter(
+        (t) => t.invitation_sent_at !== null
+      ).length;
+
+      setEmailStats({
+        total: withEmail.length,
+        invited: invitedCount,
+        responded: count || 0,
+      });
+
+      // Legacy Teams stats
+      let teamsQuery = supabase
+        .from("anonymous_tokens")
+        .select("id, email, teams_invitation_sent_at")
+        .eq("active", true)
+        .not("email", "is", null);
+
+      if (surveyData?.societe_id) {
+        teamsQuery = teamsQuery.eq("societe_id", surveyData.societe_id);
+      }
+
+      const { data: tokensWithTeams } = await teamsQuery;
+      const withTeams = tokensWithTeams || [];
+      const teamsInvitedCount = withTeams.filter(
+        (t) => t.teams_invitation_sent_at !== null
+      ).length;
+
+      setTeamsStats({
+        total: withTeams.length,
+        invited: teamsInvitedCount,
+        responded: count || 0,
+      });
     }
-
-    const { data: tokensWithEmail } = await emailQuery;
-
-    const withEmail = tokensWithEmail || [];
-    const invitedCount = withEmail.filter(
-      (t) => t.invitation_sent_at !== null
-    ).length;
-
-    setEmailStats({
-      total: withEmail.length,
-      invited: invitedCount,
-      responded: count || 0,
-    });
-
-    // Load Teams stats (active only)
-    let teamsQuery = supabase
-      .from("anonymous_tokens")
-      .select("id, email, teams_invitation_sent_at")
-      .eq("active", true)
-      .not("email", "is", null);
-
-    if (surveyData?.societe_id) {
-      teamsQuery = teamsQuery.eq("societe_id", surveyData.societe_id);
-    }
-
-    const { data: tokensWithTeams } = await teamsQuery;
-    const withTeams = tokensWithTeams || [];
-    const teamsInvitedCount = withTeams.filter(
-      (t) => t.teams_invitation_sent_at !== null
-    ).length;
-
-    setTeamsStats({
-      total: withTeams.length,
-      invited: teamsInvitedCount,
-      responded: count || 0,
-    });
 
     // Check Teams configuration
     try {
@@ -459,6 +524,25 @@ export default function DistributePage() {
     setSyncing(false);
   }
 
+  async function regeneratePopulation() {
+    setRegenerating(true);
+    try {
+      const res = await fetch(`/api/surveys/${surveyId}/generate-tokens`, {
+        method: "POST",
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success(`Population regénérée : ${data.inserted} personne(s)`);
+        await loadData();
+      } else {
+        toast.error(data.error || "Erreur lors de la régénération");
+      }
+    } catch {
+      toast.error("Erreur réseau");
+    }
+    setRegenerating(false);
+  }
+
   function getIframeCode() {
     return `<iframe src="${genericLink}" width="100%" height="700" frameborder="0" style="border: 1px solid #e5e7eb; border-radius: 8px;"></iframe>`;
   }
@@ -487,6 +571,11 @@ export default function DistributePage() {
               {survey?.title_fr}
             </p>
           </div>
+          {survey?.survey_type && (
+            <Badge variant={survey.survey_type === "pulse" ? "default" : "secondary"}>
+              {survey.survey_type === "pulse" ? "Pulse" : "Classique"}
+            </Badge>
+          )}
         </div>
         <Link href={`/surveys/${surveyId}/results`}>
           <Button variant="outline">
@@ -544,19 +633,34 @@ export default function DistributePage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <Button onClick={syncFromStructure} disabled={syncing}>
-            {syncing ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Synchronisation...
-              </>
-            ) : (
-              <>
-                <RefreshCw className="mr-2 h-4 w-4" />
-                Rafraîchir depuis la structure
-              </>
-            )}
-          </Button>
+          <div className="flex gap-3">
+            <Button onClick={syncFromStructure} disabled={syncing}>
+              {syncing ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Synchronisation...
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                  Rafraîchir depuis la structure
+                </>
+              )}
+            </Button>
+            <Button onClick={regeneratePopulation} disabled={regenerating} variant="outline">
+              {regenerating ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Regénération...
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                  Regénérer la population
+                </>
+              )}
+            </Button>
+          </div>
 
           {syncResult && (
             <div className="space-y-3 rounded-lg border border-green-200 bg-green-50 p-4">

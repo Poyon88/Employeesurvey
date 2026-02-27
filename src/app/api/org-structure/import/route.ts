@@ -11,12 +11,46 @@ type EmployeeRow = {
   direction: string;
   departement: string;
   service: string;
+  sexe: string;
+  date_naissance: string;
+  date_entree: string;
+  fonction: string;
+  lieu_travail: string;
+  type_contrat: string;
+  temps_travail: string;
+  cost_center: string;
 };
 
 type ParsedData = {
   employees: EmployeeRow[];
   errors: string[];
+  detectedDemographics: string[];
 };
+
+function parseDateForDB(value: string): string | null {
+  if (!value || !value.trim()) return null;
+  const v = value.trim();
+
+  // YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
+
+  // DD/MM/YYYY
+  const dmyMatch = v.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/);
+  if (dmyMatch) {
+    const [, d, m, y] = dmyMatch;
+    return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+  }
+
+  // Excel serial number
+  const num = Number(v);
+  if (!isNaN(num) && num > 1000) {
+    const excelEpoch = new Date(1899, 11, 30);
+    const date = new Date(excelEpoch.getTime() + num * 86400000);
+    return date.toISOString().split('T')[0];
+  }
+
+  return null;
+}
 
 function parseFile(buffer: ArrayBuffer, filename: string): ParsedData {
   const errors: string[] = [];
@@ -29,7 +63,7 @@ function parseFile(buffer: ArrayBuffer, filename: string): ParsedData {
 
   if (rows.length === 0) {
     errors.push("Le fichier est vide");
-    return { employees, errors };
+    return { employees, errors, detectedDemographics: [] };
   }
 
   // Normalize column headers (lowercase, trim, remove accents)
@@ -54,6 +88,14 @@ function parseFile(buffer: ArrayBuffer, filename: string): ParsedData {
     else if (n.includes("departement") || n.includes("department"))
       headerMap["departement"] = h;
     else if (n.includes("service")) headerMap["service"] = h;
+    else if (n.includes("sexe") || n.includes("gender") || n === "genre") headerMap["sexe"] = h;
+    else if (n.includes("date_naissance") || n.includes("date de naissance") || n.includes("birth") || n.includes("naissance")) headerMap["date_naissance"] = h;
+    else if (n.includes("date_entree") || n.includes("date d'entree") || n.includes("date entree") || n.includes("hire date") || n.includes("entry date") || n.includes("anciennete")) headerMap["date_entree"] = h;
+    else if (n.includes("fonction") || n.includes("function") || n.includes("job title") || n.includes("poste")) headerMap["fonction"] = h;
+    else if (n.includes("lieu_travail") || n.includes("lieu de travail") || n.includes("workplace") || n.includes("location") || n.includes("site")) headerMap["lieu_travail"] = h;
+    else if (n.includes("type_contrat") || n.includes("type de contrat") || n.includes("contract") || n.includes("contrat")) headerMap["type_contrat"] = h;
+    else if (n.includes("temps_travail") || n.includes("temps de travail") || n.includes("work time") || n.includes("working time") || n.includes("taux")) headerMap["temps_travail"] = h;
+    else if (n.includes("cost_center") || n.includes("cost center") || n.includes("centre de cout") || n.includes("centre de couts")) headerMap["cost_center"] = h;
   }
 
   const requiredCols = ["id_employe"];
@@ -66,7 +108,7 @@ function parseFile(buffer: ArrayBuffer, filename: string): ParsedData {
   }
 
   if (errors.length > 0) {
-    return { employees, errors };
+    return { employees, errors, detectedDemographics: [] };
   }
 
   const seenEmails = new Set<string>();
@@ -81,6 +123,14 @@ function parseFile(buffer: ArrayBuffer, filename: string): ParsedData {
     const direction = headerMap["direction"] ? (row[headerMap["direction"]] || "").toString().trim() : "";
     const departement = headerMap["departement"] ? (row[headerMap["departement"]] || "").toString().trim() : "";
     const service = headerMap["service"] ? (row[headerMap["service"]] || "").toString().trim() : "";
+    const sexe = headerMap["sexe"] ? (row[headerMap["sexe"]] || "").toString().trim() : "";
+    const date_naissance = headerMap["date_naissance"] ? (row[headerMap["date_naissance"]] || "").toString().trim() : "";
+    const date_entree = headerMap["date_entree"] ? (row[headerMap["date_entree"]] || "").toString().trim() : "";
+    const fonction = headerMap["fonction"] ? (row[headerMap["fonction"]] || "").toString().trim() : "";
+    const lieu_travail = headerMap["lieu_travail"] ? (row[headerMap["lieu_travail"]] || "").toString().trim() : "";
+    const type_contrat = headerMap["type_contrat"] ? (row[headerMap["type_contrat"]] || "").toString().trim() : "";
+    const temps_travail = headerMap["temps_travail"] ? (row[headerMap["temps_travail"]] || "").toString().trim() : "";
+    const cost_center = headerMap["cost_center"] ? (row[headerMap["cost_center"]] || "").toString().trim() : "";
 
     if (!employee_id) {
       errors.push(`Ligne ${lineNum}: ID employé manquant`);
@@ -98,10 +148,12 @@ function parseFile(buffer: ArrayBuffer, filename: string): ParsedData {
     }
     seenEmails.add(employee_id);
 
-    employees.push({ employee_id, nom, email, direction, departement, service });
+    employees.push({ employee_id, nom, email, direction, departement, service, sexe, date_naissance, date_entree, fonction, lieu_travail, type_contrat, temps_travail, cost_center });
   }
 
-  return { employees, errors };
+  const detectedDemographics = ["sexe", "date_naissance", "date_entree", "fonction", "lieu_travail", "type_contrat", "temps_travail", "cost_center"].filter(col => headerMap[col]);
+
+  return { employees, errors, detectedDemographics };
 }
 
 export async function POST(request: Request) {
@@ -154,7 +206,7 @@ export async function POST(request: Request) {
   }
 
   const buffer = await file.arrayBuffer();
-  const { employees, errors } = parseFile(buffer, file.name);
+  const { employees, errors, detectedDemographics } = parseFile(buffer, file.name);
 
   if (errors.length > 0 && employees.length === 0) {
     return NextResponse.json({ errors, employees: [] }, { status: 400 });
@@ -313,6 +365,14 @@ export async function POST(request: Request) {
           department_id: deptId,
           service_id: svcId,
           active: true,
+          sexe: emp.sexe || null,
+          date_naissance: parseDateForDB(emp.date_naissance),
+          date_entree: parseDateForDB(emp.date_entree),
+          fonction: emp.fonction || null,
+          lieu_travail: emp.lieu_travail || null,
+          type_contrat: emp.type_contrat || null,
+          temps_travail: emp.temps_travail || null,
+          cost_center: emp.cost_center || null,
         })
         .eq("id", existingToken.id);
 
@@ -346,6 +406,14 @@ export async function POST(request: Request) {
         direction_id: dirId,
         department_id: deptId,
         service_id: svcId,
+        sexe: emp.sexe || null,
+        date_naissance: parseDateForDB(emp.date_naissance),
+        date_entree: parseDateForDB(emp.date_entree),
+        fonction: emp.fonction || null,
+        lieu_travail: emp.lieu_travail || null,
+        type_contrat: emp.type_contrat || null,
+        temps_travail: emp.temps_travail || null,
+        cost_center: emp.cost_center || null,
       });
 
       if (error) {
@@ -405,6 +473,7 @@ export async function POST(request: Request) {
       tokensUpdated: updatedCount,
       tokensDeactivated: deactivatedCount,
     },
+    demographicColumns: detectedDemographics,
     tokenMappings,
   });
 }

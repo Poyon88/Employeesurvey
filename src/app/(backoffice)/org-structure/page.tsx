@@ -395,7 +395,7 @@ export default function OrgStructurePage() {
           </CardTitle>
           <CardDescription>
             Fichier CSV ou Excel avec la colonne obligatoire : <strong>ID Employe</strong>.
-            Colonnes optionnelles : Nom, Email, Direction, Departement, Service.
+            Colonnes optionnelles : Nom, Email, Direction, Departement, Service, Sexe, Date de naissance, Date d&apos;entree, Fonction, Lieu de travail, Type de contrat, Temps de travail, Cost center.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -412,7 +412,7 @@ export default function OrgStructurePage() {
             <Info className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
             <p className="text-sm text-blue-800">
               Seule la colonne <strong>ID Employe</strong> est obligatoire.
-              Les autres colonnes (Nom, Email, Direction, Departement, Service)
+              Les autres colonnes (Nom, Email, Direction, Departement, Service, Sexe, Date de naissance, Date d&apos;entree, Fonction, Lieu de travail, Type de contrat, Temps de travail, Cost center)
               sont facultatives. Selectionnez une societe ci-dessous avant d&apos;importer.
             </p>
           </div>

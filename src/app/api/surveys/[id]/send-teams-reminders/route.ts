@@ -59,25 +59,59 @@ export async function POST(
     );
   }
 
-  // Get active tokens that have been invited via Teams
-  let tokensQuery = admin
-    .from("anonymous_tokens")
-    .select("id, token, email, employee_name")
-    .eq("active", true)
-    .not("email", "is", null)
-    .not("teams_invitation_sent_at", "is", null);
+  // Check if survey_tokens exist for this survey
+  const { count: stCount } = await admin
+    .from("survey_tokens")
+    .select("id", { count: "exact", head: true })
+    .eq("survey_id", surveyId);
 
-  if (survey.societe_id) {
-    tokensQuery = tokensQuery.eq("societe_id", survey.societe_id);
-  }
+  let tokens;
 
-  const { data: tokens, error: tokensError } = await tokensQuery;
+  if (stCount && stCount > 0) {
+    // New behavior: use survey_tokens (Teams invited = teams_invitation_sent_at not null)
+    const { data: surveyTokensData, error: stError } = await admin
+      .from("survey_tokens")
+      .select("token_id, teams_invitation_sent_at, anonymous_tokens!inner(id, token, email, employee_name)")
+      .eq("survey_id", surveyId)
+      .not("teams_invitation_sent_at", "is", null);
 
-  if (tokensError) {
-    return NextResponse.json(
-      { error: "Erreur lors de la récupération des tokens" },
-      { status: 500 }
-    );
+    if (stError) {
+      return NextResponse.json(
+        { error: "Erreur lors de la récupération des tokens" },
+        { status: 500 }
+      );
+    }
+
+    tokens = (surveyTokensData || [])
+      .filter((st: any) => st.anonymous_tokens?.email)
+      .map((st: any) => ({
+        id: st.anonymous_tokens.id,
+        token: st.anonymous_tokens.token,
+        email: st.anonymous_tokens.email,
+        employee_name: st.anonymous_tokens.employee_name,
+        survey_token_id: st.token_id,
+      }));
+  } else {
+    // Legacy behavior: filter by societe_id
+    let tokensQuery = admin
+      .from("anonymous_tokens")
+      .select("id, token, email, employee_name")
+      .eq("active", true)
+      .not("email", "is", null)
+      .not("teams_invitation_sent_at", "is", null);
+
+    if (survey.societe_id) {
+      tokensQuery = tokensQuery.eq("societe_id", survey.societe_id);
+    }
+
+    const { data, error: tokensError } = await tokensQuery;
+    if (tokensError) {
+      return NextResponse.json(
+        { error: "Erreur lors de la récupération des tokens" },
+        { status: 500 }
+      );
+    }
+    tokens = data || [];
   }
 
   if (!tokens || tokens.length === 0) {
@@ -136,14 +170,24 @@ export async function POST(
     if (result.sent > 0) {
       const failedEmails = new Set(result.errors.map((e) => e.email));
       const successIds = nonResponders
-        .filter((t) => !failedEmails.has(t.email!))
-        .map((t) => t.id);
+        .filter((t: any) => !failedEmails.has(t.email!))
+        .map((t: any) => t.id);
 
       if (successIds.length > 0) {
-        await admin
-          .from("anonymous_tokens")
-          .update({ teams_reminder_sent_at: new Date().toISOString() })
-          .in("id", successIds);
+        if (stCount && stCount > 0) {
+          // Update survey_tokens
+          await admin
+            .from("survey_tokens")
+            .update({ teams_reminder_sent_at: new Date().toISOString() })
+            .eq("survey_id", surveyId)
+            .in("token_id", successIds);
+        } else {
+          // Legacy: update anonymous_tokens
+          await admin
+            .from("anonymous_tokens")
+            .update({ teams_reminder_sent_at: new Date().toISOString() })
+            .in("id", successIds);
+        }
       }
     }
 

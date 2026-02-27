@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Card,
   CardContent,
@@ -14,14 +15,10 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { toast } from "sonner";
+import { Users, Loader2 } from "lucide-react";
+import { SurveyFilters, SurveyType } from "@/lib/types";
+import FilterPanel from "@/components/survey-filters/filter-panel";
 
 export default function NewSurveyPage() {
   const [titleFr, setTitleFr] = useState("");
@@ -29,11 +26,18 @@ export default function NewSurveyPage() {
   const [descFr, setDescFr] = useState("");
   const [descEn, setDescEn] = useState("");
   const [closesAt, setClosesAt] = useState("");
-  const [societeId, setSocieteId] = useState("");
+  const [surveyType, setSurveyType] = useState<SurveyType>("classique");
+  const [samplePercentage, setSamplePercentage] = useState<number>(30);
+  const [selectedSocieteIds, setSelectedSocieteIds] = useState<string[]>([]);
+  const [filters, setFilters] = useState<SurveyFilters>({});
   const [societes, setSocietes] = useState<{ id: string; name: string }[]>([]);
   const [saving, setSaving] = useState(false);
+  const [populationCount, setPopulationCount] = useState<number | null>(null);
+  const [sampleSize, setSampleSize] = useState<number | null>(null);
+  const [loadingPopulation, setLoadingPopulation] = useState(false);
   const router = useRouter();
   const supabase = createClient();
+  const previewTimeout = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     async function loadSocietes() {
@@ -46,6 +50,55 @@ export default function NewSurveyPage() {
     }
     loadSocietes();
   }, [supabase]);
+
+  // Debounced population preview
+  const previewPopulation = useCallback(async () => {
+    const currentFilters = { ...filters, societe_ids: selectedSocieteIds };
+    if (selectedSocieteIds.length === 0) {
+      setPopulationCount(null);
+      setSampleSize(null);
+      return;
+    }
+
+    setLoadingPopulation(true);
+    try {
+      const res = await fetch("/api/surveys/preview-population", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          filters: currentFilters,
+          survey_type: surveyType,
+          sample_percentage: surveyType === "pulse" ? samplePercentage : undefined,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setPopulationCount(data.totalFiltered);
+        setSampleSize(data.sampleSize);
+      }
+    } catch {
+      // silent
+    }
+    setLoadingPopulation(false);
+  }, [filters, selectedSocieteIds, surveyType, samplePercentage]);
+
+  useEffect(() => {
+    if (previewTimeout.current) clearTimeout(previewTimeout.current);
+    previewTimeout.current = setTimeout(previewPopulation, 500);
+    return () => {
+      if (previewTimeout.current) clearTimeout(previewTimeout.current);
+    };
+  }, [previewPopulation]);
+
+  function toggleSociete(id: string) {
+    setSelectedSocieteIds((prev) =>
+      prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]
+    );
+  }
+
+  function handleFiltersChange(newFilters: SurveyFilters) {
+    setFilters(newFilters);
+  }
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -61,11 +114,16 @@ export default function NewSurveyPage() {
       return;
     }
 
-    if (!societeId) {
-      toast.error("Veuillez sélectionner une société");
+    if (selectedSocieteIds.length === 0) {
+      toast.error("Veuillez sélectionner au moins une société");
       setSaving(false);
       return;
     }
+
+    const allFilters: SurveyFilters = {
+      ...filters,
+      societe_ids: selectedSocieteIds,
+    };
 
     const { data, error } = await supabase
       .from("surveys")
@@ -76,8 +134,11 @@ export default function NewSurveyPage() {
         description_en: descEn || null,
         created_by: user.id,
         status: "draft",
-        societe_id: societeId,
+        societe_id: selectedSocieteIds[0],
         closes_at: closesAt ? new Date(closesAt).toISOString() : null,
+        survey_type: surveyType,
+        sample_percentage: surveyType === "pulse" ? samplePercentage : null,
+        filters: allFilters,
       })
       .select("id")
       .single();
@@ -109,21 +170,70 @@ export default function NewSurveyPage() {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleCreate} className="space-y-4">
+            {/* Type de sondage */}
             <div className="space-y-2">
-              <Label htmlFor="societe">Société *</Label>
-              <Select value={societeId} onValueChange={setSocieteId}>
-                <SelectTrigger id="societe">
-                  <SelectValue placeholder="Sélectionnez une société..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {societes.map((s) => (
-                    <SelectItem key={s.id} value={s.id}>
-                      {s.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label>Type de sondage *</Label>
+              <div className="flex gap-4">
+                <label className="flex items-center gap-2 rounded-lg border px-4 py-3 cursor-pointer hover:bg-muted/50 transition-colors flex-1">
+                  <input
+                    type="radio"
+                    name="survey_type"
+                    value="classique"
+                    checked={surveyType === "classique"}
+                    onChange={() => setSurveyType("classique")}
+                    className="accent-primary"
+                  />
+                  <div>
+                    <p className="font-medium text-sm">Classique</p>
+                    <p className="text-xs text-muted-foreground">
+                      Envoyer à toute la population filtrée
+                    </p>
+                  </div>
+                </label>
+                <label className="flex items-center gap-2 rounded-lg border px-4 py-3 cursor-pointer hover:bg-muted/50 transition-colors flex-1">
+                  <input
+                    type="radio"
+                    name="survey_type"
+                    value="pulse"
+                    checked={surveyType === "pulse"}
+                    onChange={() => setSurveyType("pulse")}
+                    className="accent-primary"
+                  />
+                  <div>
+                    <p className="font-medium text-sm">Pulse</p>
+                    <p className="text-xs text-muted-foreground">
+                      Échantillon représentatif automatique
+                    </p>
+                  </div>
+                </label>
+              </div>
             </div>
+
+            {/* Sélection multi-société */}
+            <div className="space-y-2">
+              <Label>Société(s) *</Label>
+              <div className="space-y-2 rounded-lg border p-3">
+                {societes.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    Aucune société disponible
+                  </p>
+                ) : (
+                  societes.map((s) => (
+                    <label
+                      key={s.id}
+                      className="flex items-center gap-2 cursor-pointer"
+                    >
+                      <Checkbox
+                        checked={selectedSocieteIds.includes(s.id)}
+                        onCheckedChange={() => toggleSociete(s.id)}
+                      />
+                      <span className="text-sm">{s.name}</span>
+                    </label>
+                  ))
+                )}
+              </div>
+            </div>
+
             <div className="space-y-2">
               <Label htmlFor="title_fr">Titre (FR) *</Label>
               <Input
@@ -172,6 +282,55 @@ export default function NewSurveyPage() {
                 onChange={(e) => setClosesAt(e.target.value)}
               />
             </div>
+
+            {/* Pourcentage échantillon (pulse uniquement) */}
+            {surveyType === "pulse" && (
+              <div className="space-y-2">
+                <Label htmlFor="sample_pct">Pourcentage d&apos;échantillon</Label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    id="sample_pct"
+                    type="number"
+                    min={1}
+                    max={100}
+                    value={samplePercentage}
+                    onChange={(e) =>
+                      setSamplePercentage(Number(e.target.value) || 30)
+                    }
+                    className="w-24"
+                  />
+                  <span className="text-sm text-muted-foreground">%</span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  L&apos;algorithme sélectionnera un échantillon stratifié
+                  proportionnel de cette taille
+                </p>
+              </div>
+            )}
+
+            {/* Aperçu population */}
+            {selectedSocieteIds.length > 0 && (
+              <div className="flex items-center gap-3 rounded-lg bg-muted/50 p-3">
+                <Users className="h-5 w-5 text-muted-foreground" />
+                {loadingPopulation ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <div className="text-sm">
+                    <span className="font-medium">
+                      {populationCount ?? "—"} personne(s)
+                    </span>{" "}
+                    ciblée(s)
+                    {surveyType === "pulse" && sampleSize != null && (
+                      <span className="text-muted-foreground">
+                        {" "}
+                        &rarr; échantillon de ~{sampleSize} personne(s)
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="flex gap-3 pt-2">
               <Button type="submit" disabled={saving}>
                 {saving ? "Création..." : "Créer le sondage"}
@@ -183,6 +342,13 @@ export default function NewSurveyPage() {
           </form>
         </CardContent>
       </Card>
+
+      {/* Panneau de filtres */}
+      <FilterPanel
+        societeIds={selectedSocieteIds}
+        filters={filters}
+        onFiltersChange={handleFiltersChange}
+      />
     </div>
   );
 }

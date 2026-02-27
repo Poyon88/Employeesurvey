@@ -18,6 +18,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { ArrowLeft, Users, ShieldAlert, BarChart3 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -91,6 +93,7 @@ type ResultsData = {
   sections: SectionInfo[];
   questions: QuestionResult[];
   organizations?: Org[];
+  demographicOptions?: Record<string, string[]>;
   anonymityBlocked?: boolean;
   message?: string;
 };
@@ -106,6 +109,16 @@ export default function ResultsPage() {
   const [directionId, setDirectionId] = useState<string>("");
   const [departmentId, setDepartmentId] = useState<string>("");
   const [serviceId, setServiceId] = useState<string>("");
+  const [sexeFilter, setSexeFilter] = useState("");
+  const [fonctionFilter, setFonctionFilter] = useState("");
+  const [lieuTravailFilter, setLieuTravailFilter] = useState("");
+  const [typeContratFilter, setTypeContratFilter] = useState("");
+  const [tempsTravailFilter, setTempsTravailFilter] = useState("");
+  const [costCenterFilter, setCostCenterFilter] = useState("");
+  const [ageMinFilter, setAgeMinFilter] = useState("");
+  const [ageMaxFilter, setAgeMaxFilter] = useState("");
+  const [seniorityMinFilter, setSeniorityMinFilter] = useState("");
+  const [seniorityMaxFilter, setSeniorityMaxFilter] = useState("");
 
   const loadResults = useCallback(async () => {
     setLoading(true);
@@ -114,6 +127,16 @@ export default function ResultsPage() {
     if (directionId) params.set("direction_id", directionId);
     if (departmentId) params.set("department_id", departmentId);
     if (serviceId) params.set("service_id", serviceId);
+    if (sexeFilter) params.set("sexe", sexeFilter);
+    if (fonctionFilter) params.set("fonction", fonctionFilter);
+    if (lieuTravailFilter) params.set("lieu_travail", lieuTravailFilter);
+    if (typeContratFilter) params.set("type_contrat", typeContratFilter);
+    if (tempsTravailFilter) params.set("temps_travail", tempsTravailFilter);
+    if (costCenterFilter) params.set("cost_center", costCenterFilter);
+    if (ageMinFilter) params.set("age_min", ageMinFilter);
+    if (ageMaxFilter) params.set("age_max", ageMaxFilter);
+    if (seniorityMinFilter) params.set("seniority_min", seniorityMinFilter);
+    if (seniorityMaxFilter) params.set("seniority_max", seniorityMaxFilter);
 
     const res = await fetch(
       `/api/surveys/${surveyId}/results?${params.toString()}`
@@ -127,7 +150,7 @@ export default function ResultsPage() {
     const json = await res.json();
     setData(json);
     setLoading(false);
-  }, [surveyId, societeId, directionId, departmentId, serviceId]);
+  }, [surveyId, societeId, directionId, departmentId, serviceId, sexeFilter, fonctionFilter, lieuTravailFilter, typeContratFilter, tempsTravailFilter, costCenterFilter, ageMinFilter, ageMaxFilter, seniorityMinFilter, seniorityMaxFilter]);
 
   useEffect(() => {
     loadResults();
@@ -268,6 +291,160 @@ export default function ResultsPage() {
                 </SelectContent>
               </Select>
             </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Demographic filters */}
+      {data?.demographicOptions && Object.values(data.demographicOptions).some((v) => v.length > 0) && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Filtrer par données démographiques</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-3 sm:grid-cols-3">
+              {data.demographicOptions.sexe?.length > 0 && (
+                <Select
+                  value={sexeFilter}
+                  onValueChange={(v) => setSexeFilter(v === "all" ? "" : v)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Sexe" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Tous</SelectItem>
+                    {data.demographicOptions.sexe.map((v) => (
+                      <SelectItem key={v} value={v}>{v}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+              {data.demographicOptions.fonctions?.length > 0 && (
+                <Select
+                  value={fonctionFilter}
+                  onValueChange={(v) => setFonctionFilter(v === "all" ? "" : v)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Fonction" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Toutes</SelectItem>
+                    {data.demographicOptions.fonctions.map((v) => (
+                      <SelectItem key={v} value={v}>{v}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+              {data.demographicOptions.lieux_travail?.length > 0 && (
+                <Select
+                  value={lieuTravailFilter}
+                  onValueChange={(v) => setLieuTravailFilter(v === "all" ? "" : v)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Lieu de travail" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Tous</SelectItem>
+                    {data.demographicOptions.lieux_travail.map((v) => (
+                      <SelectItem key={v} value={v}>{v}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+              {data.demographicOptions.types_contrat?.length > 0 && (
+                <Select
+                  value={typeContratFilter}
+                  onValueChange={(v) => setTypeContratFilter(v === "all" ? "" : v)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Type de contrat" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Tous</SelectItem>
+                    {data.demographicOptions.types_contrat.map((v) => (
+                      <SelectItem key={v} value={v}>{v}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+              {data.demographicOptions.temps_travail?.length > 0 && (
+                <Select
+                  value={tempsTravailFilter}
+                  onValueChange={(v) => setTempsTravailFilter(v === "all" ? "" : v)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Temps de travail" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Tous</SelectItem>
+                    {data.demographicOptions.temps_travail.map((v) => (
+                      <SelectItem key={v} value={v}>{v}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+              {data.demographicOptions.cost_centers?.length > 0 && (
+                <Select
+                  value={costCenterFilter}
+                  onValueChange={(v) => setCostCenterFilter(v === "all" ? "" : v)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Cost center" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Tous</SelectItem>
+                    {data.demographicOptions.cost_centers.map((v) => (
+                      <SelectItem key={v} value={v}>{v}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
+            {/* Age and seniority ranges */}
+            {(data.demographicOptions.hasDateNaissance || data.demographicOptions.hasDateEntree) && (
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                {data.demographicOptions.hasDateNaissance && (
+                  <div className="flex items-center gap-2">
+                    <Label className="text-sm whitespace-nowrap">Âge :</Label>
+                    <Input
+                      type="number"
+                      placeholder="Min"
+                      className="w-20"
+                      value={ageMinFilter}
+                      onChange={(e) => setAgeMinFilter(e.target.value)}
+                    />
+                    <span className="text-sm">-</span>
+                    <Input
+                      type="number"
+                      placeholder="Max"
+                      className="w-20"
+                      value={ageMaxFilter}
+                      onChange={(e) => setAgeMaxFilter(e.target.value)}
+                    />
+                  </div>
+                )}
+                {data.demographicOptions.hasDateEntree && (
+                  <div className="flex items-center gap-2">
+                    <Label className="text-sm whitespace-nowrap">Ancienneté :</Label>
+                    <Input
+                      type="number"
+                      placeholder="Min"
+                      className="w-20"
+                      value={seniorityMinFilter}
+                      onChange={(e) => setSeniorityMinFilter(e.target.value)}
+                    />
+                    <span className="text-sm">-</span>
+                    <Input
+                      type="number"
+                      placeholder="Max"
+                      className="w-20"
+                      value={seniorityMaxFilter}
+                      onChange={(e) => setSeniorityMaxFilter(e.target.value)}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
           </CardContent>
         </Card>
       )}

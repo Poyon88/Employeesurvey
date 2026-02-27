@@ -37,6 +37,16 @@ export async function GET(
   const directionId = searchParams.get("direction_id");
   const departmentId = searchParams.get("department_id");
   const serviceId = searchParams.get("service_id");
+  const sexe = searchParams.get("sexe");
+  const fonction = searchParams.get("fonction");
+  const lieuTravail = searchParams.get("lieu_travail");
+  const typeContrat = searchParams.get("type_contrat");
+  const tempsTravail = searchParams.get("temps_travail");
+  const costCenter = searchParams.get("cost_center");
+  const ageMin = searchParams.get("age_min");
+  const ageMax = searchParams.get("age_max");
+  const seniorityMin = searchParams.get("seniority_min");
+  const seniorityMax = searchParams.get("seniority_max");
 
   // For managers, restrict to their assigned org units
   let allowedOrgIds: string[] | null = null;
@@ -79,6 +89,74 @@ export async function GET(
   if (directionId) responsesQuery = responsesQuery.eq("direction_id", directionId);
   if (departmentId) responsesQuery = responsesQuery.eq("department_id", departmentId);
   if (serviceId) responsesQuery = responsesQuery.eq("service_id", serviceId);
+
+  // Demographic filters: find matching token_ids first, then filter responses
+  const hasDemographicFilters = sexe || fonction || lieuTravail || typeContrat || tempsTravail || costCenter || ageMin || ageMax || seniorityMin || seniorityMax;
+
+  if (hasDemographicFilters) {
+    // Build a query on anonymous_tokens with demographic filters
+    let tokenQuery = admin
+      .from("anonymous_tokens")
+      .select("id, date_naissance, date_entree")
+      .eq("active", true);
+
+    if (sexe) tokenQuery = tokenQuery.eq("sexe", sexe);
+    if (fonction) tokenQuery = tokenQuery.eq("fonction", fonction);
+    if (lieuTravail) tokenQuery = tokenQuery.eq("lieu_travail", lieuTravail);
+    if (typeContrat) tokenQuery = tokenQuery.eq("type_contrat", typeContrat);
+    if (tempsTravail) tokenQuery = tokenQuery.eq("temps_travail", tempsTravail);
+    if (costCenter) tokenQuery = tokenQuery.eq("cost_center", costCenter);
+
+    const { data: matchingTokens } = await tokenQuery;
+
+    if (matchingTokens) {
+      // Apply age/seniority filters in JS
+      let filtered = matchingTokens;
+      const now = new Date();
+
+      if (ageMin || ageMax) {
+        filtered = filtered.filter((t) => {
+          if (!t.date_naissance) return false;
+          const birth = new Date(t.date_naissance);
+          let age = now.getFullYear() - birth.getFullYear();
+          const m = now.getMonth() - birth.getMonth();
+          if (m < 0 || (m === 0 && now.getDate() < birth.getDate())) age--;
+          if (ageMin && age < Number(ageMin)) return false;
+          if (ageMax && age > Number(ageMax)) return false;
+          return true;
+        });
+      }
+
+      if (seniorityMin || seniorityMax) {
+        filtered = filtered.filter((t) => {
+          if (!t.date_entree) return false;
+          const entry = new Date(t.date_entree);
+          let years = now.getFullYear() - entry.getFullYear();
+          const m = now.getMonth() - entry.getMonth();
+          if (m < 0 || (m === 0 && now.getDate() < entry.getDate())) years--;
+          if (seniorityMin && years < Number(seniorityMin)) return false;
+          if (seniorityMax && years > Number(seniorityMax)) return false;
+          return true;
+        });
+      }
+
+      const matchingTokenIds = filtered.map((t) => t.id);
+      if (matchingTokenIds.length > 0) {
+        responsesQuery = responsesQuery.in("token_id", matchingTokenIds);
+      } else {
+        // No matching tokens - return empty results
+        return NextResponse.json({
+          survey: { id: survey.id, title_fr: survey.title_fr, title_en: survey.title_en },
+          totalResponses: 0,
+          sections: [],
+          questions: [],
+          organizations: [],
+          demographicOptions: {},
+          anonymityBlocked: false,
+        });
+      }
+    }
+  }
 
   // For managers, filter by allowed orgs
   if (allowedOrgIds) {
@@ -216,6 +294,55 @@ export async function GET(
     .select("id, name, type, parent_id")
     .order("name");
 
+  // Get available demographic filter values from survey tokens
+  let demographicOptions: Record<string, string[]> = {};
+
+  // Get tokens linked to this survey (via survey_tokens or societe_id)
+  const { data: surveyData } = await admin
+    .from("surveys")
+    .select("societe_id")
+    .eq("id", surveyId)
+    .single();
+
+  let demoQuery = admin
+    .from("anonymous_tokens")
+    .select("sexe, fonction, lieu_travail, type_contrat, temps_travail, cost_center, date_naissance, date_entree")
+    .eq("active", true);
+
+  if (surveyData?.societe_id) {
+    demoQuery = demoQuery.eq("societe_id", surveyData.societe_id);
+  }
+
+  const { data: demoTokens } = await demoQuery;
+
+  if (demoTokens) {
+    const distinct = (key: string) => {
+      const values = new Set<string>();
+      demoTokens.forEach((t: Record<string, unknown>) => {
+        const v = t[key];
+        if (v != null && v !== "") values.add(String(v));
+      });
+      return Array.from(values).sort();
+    };
+
+    demographicOptions = {
+      sexe: distinct("sexe"),
+      fonctions: distinct("fonction"),
+      lieux_travail: distinct("lieu_travail"),
+      types_contrat: distinct("type_contrat"),
+      temps_travail: distinct("temps_travail"),
+      cost_centers: distinct("cost_center"),
+    };
+
+    // Flag if date fields have data
+    if (demoTokens.some((t: Record<string, unknown>) => t.date_naissance != null)) {
+      demographicOptions.hasDateNaissance = ["true"];
+    }
+    if (demoTokens.some((t: Record<string, unknown>) => t.date_entree != null)) {
+      demographicOptions.hasDateEntree = ["true"];
+    }
+  }
+
   return NextResponse.json({
     survey: {
       id: survey.id,
@@ -226,6 +353,7 @@ export async function GET(
     sections: sectionRows || [],
     questions: questionResults,
     organizations: orgs || [],
+    demographicOptions,
     anonymityBlocked: false,
   });
 }

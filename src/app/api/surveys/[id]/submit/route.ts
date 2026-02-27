@@ -85,6 +85,29 @@ export async function POST(
       );
     }
 
+    // Verify token is allowed for this survey (via survey_tokens)
+    const { count: surveyTokenCount } = await supabase
+      .from("survey_tokens")
+      .select("id", { count: "exact", head: true })
+      .eq("survey_id", surveyId);
+
+    if (surveyTokenCount && surveyTokenCount > 0) {
+      // survey_tokens exist - check junction table
+      const { data: surveyToken } = await supabase
+        .from("survey_tokens")
+        .select("id")
+        .eq("survey_id", surveyId)
+        .eq("token_id", tokenData.id)
+        .single();
+
+      if (!surveyToken) {
+        return NextResponse.json(
+          { error: "Token non autorisé pour ce sondage" },
+          { status: 403 }
+        );
+      }
+    }
+
     // Create response
     const { data: response, error: responseError } = await supabase
       .from("responses")

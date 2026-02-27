@@ -7,6 +7,8 @@ export type QuestionType =
 
 export type SurveyStatus = "draft" | "published" | "closed";
 
+export type SurveyType = "classique" | "pulse";
+
 export type Survey = {
   id: string;
   title_fr: string;
@@ -23,6 +25,38 @@ export type Survey = {
   published_at: string | null;
   closes_at: string | null;
   closed_at: string | null;
+  created_at: string;
+  survey_type: SurveyType;
+  sample_percentage: number | null;
+  filters: SurveyFilters;
+};
+
+export type SurveyFilters = {
+  societe_ids?: string[];
+  direction_ids?: string[];
+  department_ids?: string[];
+  service_ids?: string[];
+  sexe?: string[];
+  fonctions?: string[];
+  lieux_travail?: string[];
+  types_contrat?: string[];
+  temps_travail?: string[];
+  cost_centers?: string[];
+  age_min?: number;
+  age_max?: number;
+  seniority_min?: number;
+  seniority_max?: number;
+};
+
+export type SurveyToken = {
+  id: string;
+  survey_id: string;
+  token_id: string;
+  selected_by: "filter" | "sample";
+  invitation_sent_at: string | null;
+  teams_invitation_sent_at: string | null;
+  reminder_sent_at: string | null;
+  teams_reminder_sent_at: string | null;
   created_at: string;
 };
 
@@ -77,6 +111,14 @@ export type AnonymousToken = {
   invitation_sent_at: string | null;
   reminder_sent_at: string | null;
   created_at: string;
+  sexe: string | null;
+  date_naissance: string | null;
+  date_entree: string | null;
+  fonction: string | null;
+  lieu_travail: string | null;
+  type_contrat: string | null;
+  temps_travail: string | null;
+  cost_center: string | null;
 };
 
 export type EmailSendResult = {
