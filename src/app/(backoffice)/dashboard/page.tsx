@@ -248,14 +248,11 @@ export default function DashboardPage() {
     )
       return;
 
-    const { error } = await supabase
-      .from("surveys")
-      .delete()
-      .eq("id", survey.id);
-
-    if (error) {
+    const res = await fetch(`/api/surveys/${survey.id}`, { method: "DELETE" });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
       toast.error("Erreur lors de la suppression", {
-        description: error.message,
+        description: data.error || "Erreur inconnue",
       });
     } else {
       toast.success("Sondage supprimé");

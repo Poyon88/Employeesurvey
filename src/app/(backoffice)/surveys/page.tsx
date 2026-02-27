@@ -71,9 +71,10 @@ export default function SurveysPage() {
     }
     if (!confirm(`Supprimer le sondage "${survey.title_fr}" ?`)) return;
 
-    const { error } = await supabase.from("surveys").delete().eq("id", survey.id);
-    if (error) {
-      toast.error("Erreur lors de la suppression");
+    const res = await fetch(`/api/surveys/${survey.id}`, { method: "DELETE" });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      toast.error(data.error || "Erreur lors de la suppression");
     } else {
       toast.success("Sondage supprimé");
       loadSurveys();
