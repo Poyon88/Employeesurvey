@@ -115,7 +115,21 @@ export default function DistributePage() {
       .select("id", { count: "exact", head: true })
       .eq("survey_id", surveyId);
 
-    const useSurveyTokens = (stCount ?? 0) > 0;
+    let useSurveyTokens = (stCount ?? 0) > 0;
+
+    // Auto-generate survey_tokens if survey has filters but none exist yet
+    if (!useSurveyTokens && surveyData?.filters && Object.keys(surveyData.filters).length > 0) {
+      try {
+        const genRes = await fetch(`/api/surveys/${surveyId}/generate-tokens`, { method: "POST" });
+        if (genRes.ok) {
+          const genData = await genRes.json();
+          useSurveyTokens = (genData.inserted ?? 0) > 0;
+        }
+      } catch {
+        // silent
+      }
+    }
+
     setHasSurveyTokens(useSurveyTokens);
 
     if (useSurveyTokens) {

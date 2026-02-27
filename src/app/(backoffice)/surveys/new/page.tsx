@@ -145,10 +145,19 @@ export default function NewSurveyPage() {
 
     if (error) {
       toast.error("Erreur lors de la création", { description: error.message });
-    } else {
-      toast.success("Sondage créé");
-      router.push(`/surveys/${data.id}/edit`);
+      setSaving(false);
+      return;
     }
+
+    // Generate survey_tokens based on filters
+    try {
+      await fetch(`/api/surveys/${data.id}/generate-tokens`, { method: "POST" });
+    } catch {
+      // Non-blocking: tokens can be regenerated from distribution page
+    }
+
+    toast.success("Sondage créé");
+    router.push(`/surveys/${data.id}/edit`);
     setSaving(false);
   }
 
