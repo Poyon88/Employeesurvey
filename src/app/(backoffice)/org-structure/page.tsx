@@ -29,6 +29,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Progress } from "@/components/ui/progress";
+import { PRICING_TIERS } from "@/lib/constants";
+import type { PlanTierKey } from "@/lib/constants";
 import {
   Upload,
   Download,
@@ -78,6 +81,13 @@ type TokenMapping = {
   service: string;
 };
 
+type QuotaInfo = {
+  actual: number;
+  max: number;
+  planName: string;
+  planTier: string;
+};
+
 const TYPE_LABELS: Record<string, string> = {
   societe: "Societe",
   direction: "Direction",
@@ -104,7 +114,44 @@ export default function OrgStructurePage() {
   const [tokenMappings, setTokenMappings] = useState<TokenMapping[]>([]);
   const [selectedSocieteId, setSelectedSocieteId] = useState<string>("all");
   const [importSocieteId, setImportSocieteId] = useState<string>("");
+  const [quota, setQuota] = useState<QuotaInfo | null>(null);
+  const [overageWarning, setOverageWarning] = useState<string | null>(null);
   const supabase = createClient();
+
+  const loadQuota = useCallback(async () => {
+    // Get current user
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    // Get tenant membership
+    const { data: tenantMember } = await supabase
+      .from("tenant_members")
+      .select("tenant_id")
+      .eq("user_id", user.id)
+      .single();
+
+    if (!tenantMember) return;
+
+    // Get subscription
+    const { data: subscription } = await supabase
+      .from("subscriptions")
+      .select("plan_tier, actual_employees")
+      .eq("tenant_id", tenantMember.tenant_id)
+      .single();
+
+    if (!subscription) return;
+
+    const planTier = subscription.plan_tier as PlanTierKey;
+    const tier = PRICING_TIERS[planTier];
+    if (!tier) return;
+
+    setQuota({
+      actual: subscription.actual_employees || 0,
+      max: tier.max,
+      planName: tier.name,
+      planTier,
+    });
+  }, [supabase]);
 
   const loadOrgs = useCallback(async () => {
     setLoading(true);
@@ -124,7 +171,8 @@ export default function OrgStructurePage() {
 
   useEffect(() => {
     loadOrgs();
-  }, [loadOrgs]);
+    loadQuota();
+  }, [loadOrgs, loadQuota]);
 
   async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -173,6 +221,11 @@ export default function OrgStructurePage() {
       if (data.errors?.length > 0) {
         setImportErrors(data.errors);
       }
+      if (data.overageWarning) {
+        setOverageWarning(data.overageWarning);
+      } else {
+        setOverageWarning(null);
+      }
       if (data.summary) {
         setSummary(data.summary);
         setTokenMappings(data.tokenMappings || []);
@@ -180,6 +233,7 @@ export default function OrgStructurePage() {
           description: `${data.summary.employees} employes traites — ${data.summary.tokens} nouveaux tokens, ${data.summary.tokensUpdated} mis a jour`,
         });
         loadOrgs();
+        loadQuota();
       }
     }
 
@@ -263,6 +317,61 @@ export default function OrgStructurePage() {
           </p>
         </div>
       </div>
+
+      {/* Quota gauge */}
+      {quota && quota.max !== Infinity && (
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <Users className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm font-medium">
+                  Quota employes : {quota.actual} / {quota.max}
+                </span>
+                <Badge variant="outline" className="text-xs">
+                  {quota.planName}
+                </Badge>
+              </div>
+              <span className="text-sm text-muted-foreground">
+                {Math.round((quota.actual / quota.max) * 100)}%
+              </span>
+            </div>
+            <Progress
+              value={Math.min((quota.actual / quota.max) * 100, 100)}
+              className="h-2.5"
+              indicatorColor={
+                quota.actual / quota.max >= 1
+                  ? "#ef4444"
+                  : quota.actual / quota.max >= 0.8
+                    ? "#f59e0b"
+                    : undefined
+              }
+            />
+            {quota.actual / quota.max >= 1 && (
+              <p className="mt-2 text-xs text-red-600">
+                Quota atteint. Les prochains imports pourront etre refuses si la limite est depassee.
+              </p>
+            )}
+            {quota.actual / quota.max >= 0.8 && quota.actual / quota.max < 1 && (
+              <p className="mt-2 text-xs text-amber-600">
+                Vous approchez de la limite de votre plan. Pensez a upgrader si besoin.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Overage warning from last import */}
+      {overageWarning && (
+        <Card className="border-amber-200 bg-amber-50">
+          <CardContent className="pt-6">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+              <p className="text-sm text-amber-800">{overageWarning}</p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Company filter */}
       {societesList.length > 1 && (

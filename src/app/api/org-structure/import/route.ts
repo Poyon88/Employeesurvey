@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { PRICING_TIERS, EMPLOYEE_OVERAGE_GRACE } from "@/lib/constants";
+import type { PlanTierKey } from "@/lib/constants";
 import * as XLSX from "xlsx";
 import { randomUUID } from "crypto";
 
@@ -212,6 +214,67 @@ export async function POST(request: Request) {
     return NextResponse.json({ errors, employees: [] }, { status: 400 });
   }
 
+  // ── Tenant quota checking ──────────────────────────────────────────
+  let tenantId: string | null = null;
+  let overageWarning: string | null = null;
+
+  // 1. Get the user's tenant_id via tenant_members
+  const { data: tenantMember } = await admin
+    .from("tenant_members")
+    .select("tenant_id")
+    .eq("user_id", user.id)
+    .single();
+
+  if (tenantMember) {
+    tenantId = tenantMember.tenant_id;
+
+    // 2. Get the subscription for this tenant
+    const { data: subscription } = await admin
+      .from("subscriptions")
+      .select("plan_tier, declared_employees, actual_employees")
+      .eq("tenant_id", tenantId)
+      .single();
+
+    if (subscription) {
+      const planTier = subscription.plan_tier as PlanTierKey;
+      const tier = PRICING_TIERS[planTier];
+
+      if (tier) {
+        const tierMax = tier.max;
+
+        // 3. Count existing active tokens for OTHER societes of the same tenant
+        //    (this import replaces employees for the current societe, not adds)
+        const { count: otherSocietesCount } = await admin
+          .from("anonymous_tokens")
+          .select("id", { count: "exact", head: true })
+          .eq("tenant_id", tenantId)
+          .neq("societe_id", societeId)
+          .eq("active", true);
+
+        // 4. Projected total = other societes active tokens + employees in this import
+        const importCount = employees.length;
+        const projected = (otherSocietesCount || 0) + importCount;
+
+        // 5. Check against tier max with grace
+        const hardLimit = Math.floor(tierMax * (1 + EMPLOYEE_OVERAGE_GRACE));
+
+        if (projected > hardLimit) {
+          return NextResponse.json(
+            {
+              error: `Quota dépassé : ${projected} employés dépasse la limite de ${tierMax} pour votre plan ${tier.name}. Veuillez upgrader votre abonnement.`,
+            },
+            { status: 403 }
+          );
+        }
+
+        // 6. Set overage warning if projected > max but within grace
+        if (projected > tierMax) {
+          overageWarning = `Attention : ${projected} employés dépasse le quota nominal de ${tierMax} pour votre plan ${tier.name}. Vous bénéficiez d'une tolérance de ${Math.round(EMPLOYEE_OVERAGE_GRACE * 100)}%.`;
+        }
+      }
+    }
+  }
+
   // Build unique org units
   const directions = new Map<string, true>();
   const departments = new Map<string, string>(); // dept -> direction
@@ -245,7 +308,7 @@ export async function POST(request: Request) {
     } else {
       const { data: inserted, error } = await admin
         .from("organizations")
-        .insert({ name: dirName, type: "direction", parent_id: societeId })
+        .insert({ name: dirName, type: "direction", parent_id: societeId, ...(tenantId ? { tenant_id: tenantId } : {}) })
         .select("id")
         .single();
 
@@ -277,7 +340,7 @@ export async function POST(request: Request) {
     } else {
       const { data: inserted, error } = await admin
         .from("organizations")
-        .insert({ name: deptName, type: "department", parent_id: parentId })
+        .insert({ name: deptName, type: "department", parent_id: parentId, ...(tenantId ? { tenant_id: tenantId } : {}) })
         .select("id")
         .single();
 
@@ -309,7 +372,7 @@ export async function POST(request: Request) {
     } else {
       const { data: inserted, error } = await admin
         .from("organizations")
-        .insert({ name: svcName, type: "service", parent_id: parentId })
+        .insert({ name: svcName, type: "service", parent_id: parentId, ...(tenantId ? { tenant_id: tenantId } : {}) })
         .select("id")
         .single();
 
@@ -373,6 +436,7 @@ export async function POST(request: Request) {
           type_contrat: emp.type_contrat || null,
           temps_travail: emp.temps_travail || null,
           cost_center: emp.cost_center || null,
+          ...(tenantId ? { tenant_id: tenantId } : {}),
         })
         .eq("id", existingToken.id);
 
@@ -414,6 +478,7 @@ export async function POST(request: Request) {
         type_contrat: emp.type_contrat || null,
         temps_travail: emp.temps_travail || null,
         cost_center: emp.cost_center || null,
+        ...(tenantId ? { tenant_id: tenantId } : {}),
       });
 
       if (error) {
@@ -461,6 +526,22 @@ export async function POST(request: Request) {
     }
   }
 
+  // ── Update actual_employees in subscription ────────────────────────
+  if (tenantId) {
+    const { count: freshCount } = await admin
+      .from("anonymous_tokens")
+      .select("id", { count: "exact", head: true })
+      .eq("tenant_id", tenantId)
+      .eq("active", true);
+
+    if (freshCount !== null) {
+      await admin
+        .from("subscriptions")
+        .update({ actual_employees: freshCount })
+        .eq("tenant_id", tenantId);
+    }
+  }
+
   return NextResponse.json({
     success: true,
     errors,
@@ -475,5 +556,6 @@ export async function POST(request: Request) {
     },
     demographicColumns: detectedDemographics,
     tokenMappings,
+    ...(overageWarning ? { overageWarning } : {}),
   });
 }

@@ -1,5 +1,6 @@
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/shared/app-sidebar";
+import { TrialBanner } from "@/components/layout/trial-banner";
 
 export default function BackofficeLayout({
   children,
@@ -13,6 +14,7 @@ export default function BackofficeLayout({
         <div className="flex items-center gap-2 border-b px-4 py-2">
           <SidebarTrigger />
         </div>
+        <TrialBanner />
         <div className="p-6">{children}</div>
       </main>
     </SidebarProvider>

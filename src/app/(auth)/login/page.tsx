@@ -88,6 +88,10 @@ export default function LoginPage() {
               </Link>
             </div>
           </form>
+          <p className="text-center text-sm text-muted-foreground mt-4">
+            Pas encore de compte ?{' '}
+            <Link href="/signup" className="text-primary underline">Créer un compte</Link>
+          </p>
         </CardContent>
       </Card>
     </div>
