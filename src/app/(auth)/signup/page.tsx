@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { PRICING_TIERS, type PlanTierKey } from "@/lib/constants";
@@ -27,6 +27,7 @@ import {
   Mail,
   Lock,
   Sparkles,
+  MailCheck,
 } from "lucide-react";
 
 function getTierForCount(count: number): PlanTierKey | null {
@@ -39,6 +40,14 @@ function getTierForCount(count: number): PlanTierKey | null {
 }
 
 export default function SignupPage() {
+  return (
+    <Suspense fallback={null}>
+      <SignupContent />
+    </Suspense>
+  );
+}
+
+function SignupContent() {
   const [step, setStep] = useState(1);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -46,8 +55,33 @@ export default function SignupPage() {
   const [employeeCount, setEmployeeCount] = useState<number>(10);
   const [selectedTier, setSelectedTier] = useState<PlanTierKey>("starter");
   const [loading, setLoading] = useState(false);
+  const [sent, setSent] = useState(false);
   const router = useRouter();
+  const searchParams = useSearchParams();
   const supabase = createClient();
+
+  // If returning from email confirmation, hydrate from session and skip to step 2
+  useEffect(() => {
+    if (searchParams.get("step") !== "plan") return;
+
+    async function hydrateFromSession() {
+      setLoading(true);
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (user) {
+        setEmail(user.email ?? "");
+        setCompanyName(
+          (user.user_metadata?.company_name as string) ?? ""
+        );
+        setStep(2);
+      }
+      setLoading(false);
+    }
+
+    hydrateFromSession();
+  }, [searchParams, supabase.auth]);
 
   // Step 1: Account creation
   async function handleAccountCreation(e: React.FormEvent) {
@@ -60,7 +94,11 @@ export default function SignupPage() {
     }
     setLoading(true);
 
-    const { error } = await supabase.auth.signUp({ email, password });
+    const { error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { data: { company_name: companyName } },
+    });
 
     if (error) {
       toast.error("Erreur lors de la création du compte", {
@@ -71,7 +109,7 @@ export default function SignupPage() {
     }
 
     setLoading(false);
-    setStep(2);
+    setSent(true);
   }
 
   // Step 2: Update tier based on employee count
@@ -143,7 +181,7 @@ export default function SignupPage() {
         </div>
 
         {/* Step 1: Account */}
-        {step === 1 && (
+        {step === 1 && !sent && (
           <Card className="mx-auto w-full max-w-md">
             <CardHeader className="text-center">
               <CardTitle className="text-2xl font-bold">
@@ -219,6 +257,41 @@ export default function SignupPage() {
                 <Link href="/login" className="text-primary underline">
                   Se connecter
                 </Link>
+              </p>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Step 1 bis: Check your email */}
+        {step === 1 && sent && (
+          <Card className="mx-auto w-full max-w-md">
+            <CardHeader className="text-center">
+              <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
+                <MailCheck className="h-8 w-8 text-primary" />
+              </div>
+              <CardTitle className="text-2xl font-bold">
+                Vérifiez votre email
+              </CardTitle>
+              <CardDescription>
+                Un lien de confirmation a été envoyé à{" "}
+                <span className="font-medium text-foreground">{email}</span>
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4 text-center">
+              <p className="text-sm text-muted-foreground">
+                Cliquez sur le lien dans l&apos;email pour activer votre compte
+                et continuer votre inscription.
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Vous ne trouvez pas l&apos;email ? Vérifiez vos spams ou{" "}
+                <button
+                  type="button"
+                  className="text-primary underline"
+                  onClick={() => setSent(false)}
+                >
+                  réessayez avec une autre adresse
+                </button>
+                .
               </p>
             </CardContent>
           </Card>
@@ -317,10 +390,7 @@ export default function SignupPage() {
               })}
             </div>
 
-            <div className="flex justify-center gap-3">
-              <Button variant="outline" onClick={() => setStep(1)}>
-                <ArrowLeft className="mr-2 h-4 w-4" /> Retour
-              </Button>
+            <div className="flex justify-center">
               <Button onClick={() => setStep(3)}>
                 Continuer <ArrowRight className="ml-2 h-4 w-4" />
               </Button>

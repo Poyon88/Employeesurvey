@@ -30,6 +30,14 @@ export async function completeSignup({
       return { error: "Utilisateur non authentifié. Veuillez vous reconnecter." };
     }
 
+    // Fallback: read company_name from user_metadata if not provided
+    const resolvedCompanyName =
+      companyName || (user.user_metadata?.company_name as string) || "";
+
+    if (!resolvedCompanyName) {
+      return { error: "Le nom de l'entreprise est requis." };
+    }
+
     // Use admin client to bypass RLS (user has no tenant yet)
     const admin = createAdminClient();
 
@@ -47,7 +55,7 @@ export async function completeSignup({
     }
 
     // 3. Generate unique slug
-    let slug = slugify(companyName);
+    let slug = slugify(resolvedCompanyName);
     const { data: slugExists } = await admin
       .from("tenants")
       .select("id")
@@ -62,7 +70,7 @@ export async function completeSignup({
     const { data: tenant, error: tenantError } = await admin
       .from("tenants")
       .insert({
-        name: companyName,
+        name: resolvedCompanyName,
         slug,
       })
       .select("id")
@@ -89,6 +97,12 @@ export async function completeSignup({
       };
     }
 
+    // 4b. Set tenant_id on the user's profile
+    await admin
+      .from("profiles")
+      .update({ tenant_id: tenant.id })
+      .eq("id", user.id);
+
     // 5. Create subscription
     const trialEndsAt = new Date();
     trialEndsAt.setDate(trialEndsAt.getDate() + TRIAL_DURATION_DAYS);
@@ -112,7 +126,7 @@ export async function completeSignup({
       const stripe = getStripe();
       const customer = await stripe.customers.create({
         email: user.email,
-        name: companyName,
+        name: resolvedCompanyName,
         metadata: {
           tenant_id: tenant.id,
         },
