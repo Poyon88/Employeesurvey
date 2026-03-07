@@ -3,6 +3,7 @@ export interface Tenant {
   name: string;
   slug: string;
   stripe_customer_id: string | null;
+  suspended_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -33,6 +34,26 @@ export interface Subscription {
   cancel_at_period_end: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface Profile {
+  id: string;
+  email: string;
+  full_name: string | null;
+  role: string;
+  tenant_id: string | null;
+  is_platform_admin: boolean;
+  created_at: string;
+}
+
+export interface PlatformAdminLog {
+  id: string;
+  admin_user_id: string;
+  action: string;
+  target_type: string;
+  target_id: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
 }
 
 export interface TenantInvitation {

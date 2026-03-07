@@ -97,10 +97,10 @@ export async function completeSignup({
       };
     }
 
-    // 4b. Set tenant_id on the user's profile
+    // 4b. Set tenant_id and admin role on the user's profile
     await admin
       .from("profiles")
-      .update({ tenant_id: tenant.id })
+      .update({ tenant_id: tenant.id, role: "admin" })
       .eq("id", user.id);
 
     // 5. Create subscription

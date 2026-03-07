@@ -72,11 +72,8 @@ export default function SurveyEditPage() {
 
   const [survey, setSurvey] = useState<Survey | null>(null);
   const [titleFr, setTitleFr] = useState("");
-  const [titleEn, setTitleEn] = useState("");
   const [descFr, setDescFr] = useState("");
-  const [descEn, setDescEn] = useState("");
   const [introFr, setIntroFr] = useState("");
-  const [introEn, setIntroEn] = useState("");
   const [closesAt, setClosesAt] = useState<string>("");
   const [societeId, setSocieteId] = useState<string>("");
   const [societes, setSocietes] = useState<{ id: string; name: string }[]>([]);
@@ -117,11 +114,8 @@ export default function SurveyEditPage() {
 
     setSurvey(surveyData);
     setTitleFr(surveyData.title_fr);
-    setTitleEn(surveyData.title_en || "");
     setDescFr(surveyData.description_fr || "");
-    setDescEn(surveyData.description_en || "");
     setIntroFr(surveyData.introduction_fr || "");
-    setIntroEn(surveyData.introduction_en || "");
     setClosesAt(surveyData.closes_at ? surveyData.closes_at.split("T")[0] : "");
     setSocieteId(surveyData.societe_id || "");
     setWaveGroupId(surveyData.wave_group_id || "");
@@ -365,11 +359,11 @@ export default function SurveyEditPage() {
       .from("surveys")
       .update({
         title_fr: titleFr,
-        title_en: titleEn || null,
+        title_en: null,
         description_fr: descFr || null,
-        description_en: descEn || null,
+        description_en: null,
         introduction_fr: introFr || null,
-        introduction_en: introEn || null,
+        introduction_en: null,
         closes_at: closesAt ? new Date(closesAt).toISOString() : null,
         societe_id: societeId || null,
         wave_group_id: waveGroupId || null,

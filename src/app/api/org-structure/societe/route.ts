@@ -53,12 +53,25 @@ export async function POST(request: Request) {
 
   const admin = createAdminClient();
 
-  // Check name uniqueness
+  // Get user's tenant_id
+  const { data: membership } = await supabase
+    .from("tenant_members")
+    .select("tenant_id")
+    .eq("user_id", user.id)
+    .limit(1)
+    .single();
+
+  if (!membership) {
+    return NextResponse.json({ error: "Aucun tenant associe" }, { status: 403 });
+  }
+
+  // Check name uniqueness within tenant
   const { data: existing } = await admin
     .from("organizations")
     .select("id")
     .eq("name", name)
     .eq("type", "societe")
+    .eq("tenant_id", membership.tenant_id)
     .single();
 
   if (existing) {
@@ -75,6 +88,7 @@ export async function POST(request: Request) {
       name,
       type: "societe",
       parent_id: null,
+      tenant_id: membership.tenant_id,
       primary_color: primaryColor || null,
       secondary_color: secondaryColor || null,
       accent_color: accentColor || null,

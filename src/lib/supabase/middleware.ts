@@ -1,7 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-const PUBLIC_PATHS = ["/login", "/signup", "/reset-password", "/s/", "/thank-you", "/auth/", "/api/surveys/", "/api/stripe/webhook"];
+const PUBLIC_PATHS = ["/login", "/signup", "/reset-password", "/s/", "/thank-you", "/auth/", "/api/surveys/", "/api/stripe/webhook", "/suspended"];
 
 function isPublicPath(pathname: string): boolean {
   if (pathname === "/") return true;
@@ -50,6 +50,24 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
+  // Admin routes: check is_platform_admin
+  if (pathname.startsWith("/admin")) {
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("is_platform_admin")
+      .eq("id", user.id)
+      .single();
+
+    if (!profile?.is_platform_admin) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/dashboard";
+      return NextResponse.redirect(url);
+    }
+
+    // Platform admins skip tenant/subscription checks for /admin routes
+    return supabaseResponse;
+  }
+
   // Check if user has a tenant
   const { data: membership } = await supabase
     .from("tenant_members")
@@ -64,6 +82,20 @@ export async function updateSession(request: NextRequest) {
     const url = request.nextUrl.clone();
     url.pathname = "/signup";
     url.searchParams.set("step", "plan");
+    return NextResponse.redirect(url);
+  }
+
+  // Check if tenant is suspended
+  const { data: tenant } = await supabase
+    .from("tenants")
+    .select("suspended_at")
+    .eq("id", membership.tenant_id)
+    .single();
+
+  if (tenant?.suspended_at) {
+    if (pathname === "/suspended") return supabaseResponse;
+    const url = request.nextUrl.clone();
+    url.pathname = "/suspended";
     return NextResponse.redirect(url);
   }
 

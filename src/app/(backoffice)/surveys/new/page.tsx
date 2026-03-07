@@ -22,9 +22,7 @@ import FilterPanel from "@/components/survey-filters/filter-panel";
 
 export default function NewSurveyPage() {
   const [titleFr, setTitleFr] = useState("");
-  const [titleEn, setTitleEn] = useState("");
   const [descFr, setDescFr] = useState("");
-  const [descEn, setDescEn] = useState("");
   const [closesAt, setClosesAt] = useState("");
   const [surveyType, setSurveyType] = useState<SurveyType>("classique");
   const [samplePercentage, setSamplePercentage] = useState<number>(30);
@@ -129,9 +127,9 @@ export default function NewSurveyPage() {
       .from("surveys")
       .insert({
         title_fr: titleFr,
-        title_en: titleEn || null,
+        title_en: null,
         description_fr: descFr || null,
-        description_en: descEn || null,
+        description_en: null,
         created_by: user.id,
         status: "draft",
         societe_id: selectedSocieteIds[0],
@@ -174,7 +172,7 @@ export default function NewSurveyPage() {
         <CardHeader>
           <CardTitle>Informations générales</CardTitle>
           <CardDescription>
-            Le titre et la description en anglais sont optionnels
+            Renseignez les informations de votre sondage
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -244,7 +242,7 @@ export default function NewSurveyPage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="title_fr">Titre (FR) *</Label>
+              <Label htmlFor="title_fr">Titre *</Label>
               <Input
                 id="title_fr"
                 value={titleFr}
@@ -254,31 +252,12 @@ export default function NewSurveyPage() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="title_en">Titre (EN)</Label>
-              <Input
-                id="title_en"
-                value={titleEn}
-                onChange={(e) => setTitleEn(e.target.value)}
-                placeholder="Ex: Satisfaction Survey 2026"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="desc_fr">Description (FR)</Label>
+              <Label htmlFor="desc_fr">Description</Label>
               <Textarea
                 id="desc_fr"
                 value={descFr}
                 onChange={(e) => setDescFr(e.target.value)}
                 placeholder={"Cette enquête est anonyme et a pour objectif d'améliorer nos conditions de travail, notre organisation et notre collaboration.\nMerci de répondre avec sincérité."}
-                rows={3}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="desc_en">Description (EN)</Label>
-              <Textarea
-                id="desc_en"
-                value={descEn}
-                onChange={(e) => setDescEn(e.target.value)}
-                placeholder="Survey description..."
                 rows={3}
               />
             </div>
