@@ -43,6 +43,7 @@ import {
   Send,
   ArrowLeft,
   FileUp,
+  Sparkles,
   TrendingUp,
   ChevronUp,
   ChevronDown,
@@ -51,8 +52,16 @@ import {
   Eye,
 } from "lucide-react";
 import { toast } from "sonner";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import Link from "next/link";
-import type { Survey, Question, QuestionOption } from "@/lib/types";
+import type { Survey, Question, QuestionOption, QuestionType } from "@/lib/types";
+import { GenerateAIDialog } from "@/components/survey-editor/generate-ai-dialog";
+import type { GeneratedSurvey } from "@/lib/ai/generate-survey";
 import {
   QuestionCard,
   type EditableQuestion,
@@ -87,6 +96,7 @@ export default function SurveyEditPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
+  const [showAIDialog, setShowAIDialog] = useState(false);
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -510,6 +520,35 @@ export default function SurveyEditPage() {
     setPublishing(false);
   }
 
+  function handleAIInsert(generated: GeneratedSurvey) {
+    // Update survey metadata
+    setTitleFr(generated.title);
+    if (generated.description) setDescFr(generated.description);
+    if (generated.introduction) setIntroFr(generated.introduction);
+
+    // Convert AI sections/questions to editable format
+    const newSections: EditableSection[] = generated.sections.map((s) => ({
+      id: crypto.randomUUID(),
+      title_fr: s.name,
+      questions: s.questions.map((q) => ({
+        id: crypto.randomUUID(),
+        type: q.type as QuestionType,
+        text_fr: q.text_fr,
+        text_en: q.text_en || "",
+        question_code: q.question_code || "",
+        required: true,
+        options: q.options.map((o) => ({
+          id: crypto.randomUUID(),
+          text_fr: o.text_fr,
+          text_en: o.text_en || "",
+        })),
+      })),
+    }));
+
+    setSections(newSections);
+    toast.success("Sondage genere par l'IA insere avec succes");
+  }
+
   const isDraft = survey?.status === "draft";
 
   if (loading) {
@@ -541,28 +580,72 @@ export default function SurveyEditPage() {
         </div>
         <div className="flex gap-2">
           {isDraft && (
-            <>
-              <Link href={`/s/${surveyId}?preview=1`} target="_blank">
-                <Button variant="outline">
-                  <Eye className="mr-2 h-4 w-4" />
-                  Prévisualiser
-                </Button>
-              </Link>
-              <Link href={`/surveys/${surveyId}/import`}>
-                <Button variant="outline">
-                  <FileUp className="mr-2 h-4 w-4" />
-                  Import IA
-                </Button>
-              </Link>
-              <Button variant="outline" onClick={handleSave} disabled={saving}>
-                <Save className="mr-2 h-4 w-4" />
-                {saving ? "Sauvegarde..." : "Sauvegarder"}
-              </Button>
-              <Button onClick={handlePublish} disabled={publishing || saving}>
-                <Send className="mr-2 h-4 w-4" />
-                {publishing ? "Publication..." : "Publier"}
-              </Button>
-            </>
+            <TooltipProvider delayDuration={300}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="outline" onClick={() => setShowAIDialog(true)}>
+                    <Sparkles className="mr-2 h-4 w-4" />
+                    Generer par IA
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Creer un sondage complet a partir d&apos;une description ou d&apos;un template</p>
+                </TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Link href={`/surveys/${surveyId}/import`}>
+                    <Button variant="outline">
+                      <FileUp className="mr-2 h-4 w-4" />
+                      Import IA
+                    </Button>
+                  </Link>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Importer des questions depuis un fichier PDF, Word ou texte</p>
+                </TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="outline"
+                    onClick={async () => {
+                      await handleSave();
+                      window.open(`/s/${surveyId}?preview=1`, "_blank");
+                    }}
+                    disabled={saving}
+                  >
+                    <Eye className="mr-2 h-4 w-4" />
+                    Prévisualiser
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Sauvegarder et voir le sondage tel que les repondants le verront</p>
+                </TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="outline" onClick={handleSave} disabled={saving}>
+                    <Save className="mr-2 h-4 w-4" />
+                    {saving ? "Sauvegarde..." : "Sauvegarder"}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Enregistrer les modifications sans publier</p>
+                </TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button onClick={handlePublish} disabled={publishing || saving}>
+                    <Send className="mr-2 h-4 w-4" />
+                    {publishing ? "Publication..." : "Publier"}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>Publier le sondage et le rendre accessible aux repondants</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           )}
           {survey?.status === "published" && (
             <>
@@ -871,6 +954,12 @@ export default function SurveyEditPage() {
           </div>
         )}
       </div>
+
+      <GenerateAIDialog
+        open={showAIDialog}
+        onOpenChange={setShowAIDialog}
+        onInsert={handleAIInsert}
+      />
     </div>
   );
 }

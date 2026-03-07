@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { Suspense, useEffect, useState, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Search, Pause, Play, Eye } from "lucide-react";
@@ -28,6 +28,14 @@ import { getTenantsWithDetails, suspendTenant, reactivateTenant } from "../actio
 import type { TenantWithDetails } from "@/lib/types/admin";
 
 export default function AdminTenantsPage() {
+  return (
+    <Suspense>
+      <AdminTenantsContent />
+    </Suspense>
+  );
+}
+
+function AdminTenantsContent() {
   const searchParams = useSearchParams();
   const initialStatus = searchParams.get("status") || "all";
 
